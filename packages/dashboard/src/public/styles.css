@@ -1,0 +1,154 @@
+:root {
+  --bg: #0f1419;
+  --surface: #1a2332;
+  --border: #2d3a4f;
+  --text: #e7ecf3;
+  --muted: #8b9cb3;
+  --accent: #5b9fd4;
+  --success: #3d9970;
+  --warning: #d4a017;
+  --error: #c44;
+  --font: 'Segoe UI', system-ui, sans-serif;
+}
+
+* { box-sizing: border-box; }
+
+body {
+  margin: 0;
+  font-family: var(--font);
+  background: var(--bg);
+  color: var(--text);
+  line-height: 1.5;
+}
+
+header {
+  padding: 1.5rem 2rem;
+  border-bottom: 1px solid var(--border);
+  background: var(--surface);
+}
+
+header h1 { margin: 0; font-size: 1.5rem; }
+.subtitle { margin: 0.25rem 0 0; color: var(--muted); font-size: 0.9rem; }
+
+.status-banner {
+  margin-top: 0.75rem;
+  padding: 0.6rem 1rem;
+  border-radius: 6px;
+  font-size: 0.85rem;
+}
+.status-banner.error {
+  background: rgba(204, 68, 68, 0.15);
+  border: 1px solid var(--error);
+  color: #f5a5a5;
+}
+.status-banner.ok {
+  background: rgba(61, 153, 112, 0.15);
+  border: 1px solid var(--success);
+  color: #9fd4b8;
+}
+
+main { padding: 1.5rem 2rem; max-width: 1100px; margin: 0 auto; }
+section { margin-bottom: 2rem; }
+h2 { font-size: 1.1rem; margin-bottom: 0.75rem; }
+
+.steps { display: flex; gap: 0.5rem; margin-bottom: 1rem; flex-wrap: wrap; }
+.step {
+  padding: 0.35rem 0.75rem;
+  border-radius: 999px;
+  background: var(--surface);
+  border: 1px solid var(--border);
+  font-size: 0.8rem;
+  color: var(--muted);
+}
+.step.active { border-color: var(--accent); color: var(--accent); }
+.step.done { border-color: var(--success); color: var(--success); }
+
+.panel { background: var(--surface); border: 1px solid var(--border); border-radius: 8px; padding: 1.25rem; }
+.panel.hidden { display: none; }
+
+label { display: block; margin-bottom: 0.75rem; font-size: 0.85rem; color: var(--muted); }
+input, select {
+  display: block;
+  width: 100%;
+  max-width: 400px;
+  margin-top: 0.25rem;
+  padding: 0.5rem;
+  background: var(--bg);
+  border: 1px solid var(--border);
+  border-radius: 4px;
+  color: var(--text);
+}
+
+.button-row { display: flex; gap: 0.75rem; flex-wrap: wrap; }
+
+button {
+  background: var(--accent);
+  color: #fff;
+  border: none;
+  padding: 0.6rem 1rem;
+  border-radius: 6px;
+  cursor: pointer;
+  font-size: 0.9rem;
+  margin-top: 0.5rem;
+  margin-right: 0.5rem;
+}
+button:hover { filter: brightness(1.1); }
+button.secondary { background: transparent; border: 1px solid var(--border); color: var(--muted); }
+button.approve { background: var(--success); }
+button.reject { background: var(--error); }
+button.link { background: none; color: var(--accent); padding: 0.2rem 0.5rem; font-size: 0.8rem; }
+
+.output, .preview {
+  margin-top: 1rem;
+  padding: 1rem;
+  background: var(--bg);
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  font-size: 0.85rem;
+  overflow-x: auto;
+}
+
+.consent-card {
+  border: 2px solid var(--accent);
+  border-radius: 8px;
+  padding: 1.25rem;
+}
+.consent-label {
+  text-transform: uppercase;
+  font-size: 0.75rem;
+  letter-spacing: 0.05em;
+  color: var(--accent);
+  margin: 0 0 0.75rem;
+}
+.consent-actions { display: flex; gap: 0.75rem; margin-top: 1rem; }
+
+table { width: 100%; border-collapse: collapse; font-size: 0.85rem; }
+th, td { text-align: left; padding: 0.6rem 0.75rem; border-bottom: 1px solid var(--border); }
+th { color: var(--muted); font-weight: 500; }
+
+.status-matched { color: var(--success); }
+.status-mismatch, .status-blocked { color: var(--error); }
+.status-pending, .status-waiting { color: var(--warning); }
+.status-executed { color: var(--success); }
+
+.severity-error { color: var(--error); }
+.severity-warning { color: var(--warning); }
+
+.badge {
+  display: inline-block;
+  background: var(--error);
+  color: #fff;
+  font-size: 0.7rem;
+  padding: 0.15rem 0.5rem;
+  border-radius: 999px;
+  margin-left: 0.5rem;
+}
+.hidden { display: none; }
+
+.chain-view { margin-top: 1rem; }
+.chain-view pre { font-size: 0.75rem; max-height: 300px; overflow: auto; }
+
+.hint { font-size: 0.85rem; color: var(--muted); margin: -0.5rem 0 1rem; }
+.ai-panel { border: 1px solid var(--accent); border-radius: 8px; padding: 1.25rem; margin-bottom: 2rem; }
+.badge.groq-on { background: var(--success); }
+.badge.groq-off { background: var(--muted); }
