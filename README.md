@@ -1,8 +1,50 @@
 # Pixelium Consent Commerce
 
-**Pixelium Internship Program 2026** — Consent-Aware Agent Commerce prototype.
+**Pixelium Internship Program 2026** — Prototype de commerce agentique avec consentement utilisateur.
 
-Two A2A-speaking agents (e-commerce + payment) communicate through a **consent broker** that enforces an AP2-inspired mandate chain: **Intent → Cart → Payment**.
+Boutique en ligne où des agents IA (LangGraph) recherchent des produits et préparent des achats **uniquement après validation explicite** de l'utilisateur. Un **consent broker** central applique une chaîne de mandats signés inspirée d'AP2 : **Intent → Cart → Payment**. Assistant shopping conversationnel (RAG + Groq), panier et paiement isolés par utilisateur, déploiement Docker sur Azure.
+
+| | |
+|---|---|
+| **Démo en ligne** | https://pixelium.duckdns.org |
+| **Compte démo** | `demo@pixelium.com` / `demo123` |
+| **Dépôt GitHub** | https://github.com/Aladimassi/Pixeliumstg |
+
+## Pour l'encadrant
+
+Document d'architecture complet (contexte, schémas, flux mandats, RAG, sécurité, déploiement) :
+
+| Format | Lien |
+|--------|------|
+| **PDF (recommandé)** | [docs/ARCHITECTURE_ENCADRANT.pdf](./docs/ARCHITECTURE_ENCADRANT.pdf) |
+| **HTML** | [docs/ARCHITECTURE_ENCADRANT.html](./docs/ARCHITECTURE_ENCADRANT.html) |
+
+Sur GitHub : [Architecture encadrant (PDF)](https://github.com/Aladimassi/Pixeliumstg/blob/main/docs/ARCHITECTURE_ENCADRANT.pdf) · [Architecture encadrant (HTML)](https://github.com/Aladimassi/Pixeliumstg/blob/main/docs/ARCHITECTURE_ENCADRANT.html)
+
+Autres livrables : [rapport final](./docs/FINAL_REPORT.md) · [format des mandats](./docs/MANDATE_FORMAT.md) · [sécurité](./docs/SECURITY_FINDINGS.md) · [script de démo](./docs/DEMO_SCRIPT.md)
+
+## Fonctionnalités principales
+
+- **Chat shopping multi-tours** — l'utilisateur discute avec l'assistant IA ; recommandations vs achat automatique sont distinguées (« que me recommandes-tu ? » vs « achète-moi les chaussures »).
+- **Chaîne de consentement** — chaque étape (intention, panier, paiement) passe par des mandats signés HMAC validés par le broker avant tout débit.
+- **Agents A2A** — agent produit (LangGraph, port 4001) et agent paiement (port 4002) orchestrés par le broker (port 4000), jamais en contact direct avec le client.
+- **RAG catalogue** — embeddings, vector store, reranking et expansion de requêtes (ex. running → chaussures).
+- **Guardrails** — politiques entrée/sortie sur les requêtes IA et les actions broker.
+- **Auth JWT + MySQL** — comptes utilisateurs, commandes filtrées par utilisateur, panier et carte bancaire en localStorage par session.
+- **Déploiement production** — Docker Compose (nginx HTTPS, broker Node, dashboard React, agents Python, MySQL).
+
+## Stack technique
+
+| Couche | Technologies |
+|--------|----------------|
+| Frontend | React, Vite, TypeScript |
+| API / orchestration | Node.js, Express, TypeScript |
+| Agents | Python, LangGraph, FastAPI |
+| IA | Groq (LLM + intent), embeddings locaux, RAG |
+| Données | MySQL (auth, catalogue, audit) |
+| Infra | Docker, nginx, Azure VM |
+
+Deux agents A2A (e-commerce + paiement) communiquent via un **consent broker** qui journalise et valide chaque mandat avant simulation de charge.
 
 ## Architecture
 
@@ -110,12 +152,15 @@ Node.js apps live in `apps/`. Shared TS libraries in `packages/`. Python LangGra
 
 | Deliverable | Location |
 |-------------|----------|
+| **Architecture encadrant (PDF)** | [docs/ARCHITECTURE_ENCADRANT.pdf](./docs/ARCHITECTURE_ENCADRANT.pdf) |
+| **Architecture encadrant (HTML)** | [docs/ARCHITECTURE_ENCADRANT.html](./docs/ARCHITECTURE_ENCADRANT.html) |
 | Working prototype | `apps/`, `packages/`, `services/` |
 | Mandate spec | [docs/MANDATE_FORMAT.md](./docs/MANDATE_FORMAT.md) |
 | Final report | [docs/FINAL_REPORT.md](./docs/FINAL_REPORT.md) |
 | Security memo | [docs/SECURITY_FINDINGS.md](./docs/SECURITY_FINDINGS.md) |
 | Usability study | [docs/USABILITY.md](./docs/USABILITY.md) |
 | Demo script | [docs/DEMO_SCRIPT.md](./docs/DEMO_SCRIPT.md) |
+| Deploy guide | [docs/DEPLOY.md](./docs/DEPLOY.md) |
 
 ## Groq AI
 
