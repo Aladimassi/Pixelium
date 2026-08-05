@@ -16,4 +16,6 @@ class ProductState(TypedDict, total=False):
     ranked_sku: str
     products: list[dict]
     cart_mandate: dict
+    thinking: str
+    warnings: list[str]
     error: str

@@ -2,7 +2,9 @@ import { useEffect, useState } from 'react';
 import type { SavedCard } from '../lib/payment';
 import { BRAND_OPTIONS } from '../lib/payment';
 import { ACCENT_OPTIONS, AVATAR_OPTIONS } from '../lib/profile';
+import { type ShippingAddress, isShippingComplete } from '../lib/shipping';
 import { SavedCardView } from './SavedCardView';
+import { ShippingAddressFields } from './ShippingAddressFields';
 import { useDialog } from '../hooks/useDialog';
 
 interface ProfileModalProps {
@@ -15,12 +17,14 @@ interface ProfileModalProps {
   card: SavedCard;
   error?: string;
   saved?: boolean;
-  initialTab?: 'identity' | 'appearance' | 'payment';
+  initialTab?: 'identity' | 'appearance' | 'payment' | 'delivery';
+  shippingAddress: ShippingAddress;
   onClose: () => void;
   onSave: (data: {
     displayName: string;
     prefs: { avatar: string; tagline: string; accent: string };
     card: SavedCard;
+    shippingAddress: ShippingAddress;
   }) => void;
 }
 
@@ -35,6 +39,7 @@ export function ProfileModal({
   error,
   saved,
   initialTab = 'identity',
+  shippingAddress: initialShippingAddress,
   onClose,
   onSave,
 }: ProfileModalProps) {
@@ -45,6 +50,7 @@ export function ProfileModal({
   const [avatar, setAvatar] = useState(initialAvatar);
   const [accent, setAccent] = useState(initialAccent);
   const [card, setCard] = useState(initialCard);
+  const [shippingAddress, setShippingAddress] = useState(initialShippingAddress);
 
   useEffect(() => {
     if (!open) return;
@@ -54,7 +60,8 @@ export function ProfileModal({
     setAvatar(initialAvatar);
     setAccent(initialAccent);
     setCard(initialCard);
-  }, [open, initialTab, initialDisplayName, initialTagline, initialAvatar, initialAccent, initialCard]);
+    setShippingAddress(initialShippingAddress);
+  }, [open, initialTab, initialDisplayName, initialTagline, initialAvatar, initialAccent, initialCard, initialShippingAddress]);
 
   const previewCard = { ...card };
 
@@ -70,7 +77,7 @@ export function ProfileModal({
       </p>
 
       <div className="profile-tabs" role="tablist" aria-label="Profile sections">
-        {(['identity', 'appearance', 'payment'] as const).map((t) => (
+        {(['identity', 'delivery', 'appearance', 'payment'] as const).map((t) => (
           <button
             key={t}
             type="button"
@@ -79,7 +86,13 @@ export function ProfileModal({
             aria-selected={tab === t}
             onClick={() => setTab(t)}
           >
-            {t === 'identity' ? 'Identity' : t === 'appearance' ? 'Appearance' : 'Payment'}
+            {t === 'identity'
+              ? 'Identity'
+              : t === 'delivery'
+                ? 'Delivery'
+                : t === 'appearance'
+                  ? 'Appearance'
+                  : 'Payment'}
           </button>
         ))}
       </div>
@@ -122,6 +135,25 @@ export function ProfileModal({
           onChange={(e) => setTagline(e.target.value)}
           placeholder="e.g. Consent-native shopper"
         />
+      </div>
+
+      <div id="profile-panel-delivery" className={`profile-panel${tab === 'delivery' ? '' : ' hidden'}`} role="tabpanel">
+        <p className="section-header__eyebrow">Delivery address</p>
+        <p className="hint profile-field-hint">
+          Saved on this device for your account. Checkout skips the address step when this is complete.
+        </p>
+        {isShippingComplete(shippingAddress) ? (
+          <p className="saved-address-banner saved-address-banner--profile" role="status">
+            ✓ Address saved — AI and cart checkout will use it automatically.
+          </p>
+        ) : null}
+        <div className="shipping-form shipping-form--profile">
+          <ShippingAddressFields
+            address={shippingAddress}
+            onChange={(patch) => setShippingAddress((prev) => ({ ...prev, ...patch }))}
+            idPrefix="profile-ship"
+          />
+        </div>
       </div>
 
       <div
@@ -274,6 +306,7 @@ export function ProfileModal({
             displayName: displayName.trim(),
             prefs: { avatar, tagline: tagline.trim(), accent },
             card,
+            shippingAddress,
           })
         }
       >

@@ -63,4 +63,6 @@ def invoke(body: PaymentInvokeRequest) -> dict[str, Any]:
         message=result.get("message") or result.get("explanation", ""),
         explanation=result.get("explanation"),
         proofErrors=result.get("proof_errors"),
+        thinking=result.get("thinking"),
+        riskNotes=result.get("risk_notes"),
     ).model_dump(exclude_none=True)

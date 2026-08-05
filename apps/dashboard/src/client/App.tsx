@@ -1,13 +1,6 @@
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import { api, loadBrokerConfig } from './lib/api';
-import {
-  clearSession,
-  getToken,
-  getUser,
-  isLoggedIn,
-  saveSession,
-  type User,
-} from './lib/auth';
+import { readSession, clearSession, getToken, getUser, isLoggedIn, saveSession, type User } from './lib/auth';
 import {
   addToCart,
   cartCount,
@@ -25,6 +18,8 @@ import {
 import { cardDisplayLine, ensureDemoCard, getCardForProfile, getSavedCard, isCardComplete, isDemoUser, saveSavedCard } from './lib/payment';
 import { applyAccentTheme, getProfilePrefs, saveProfilePrefs } from './lib/profile';
 import { AdminModal } from './components/AdminModal';
+import { HomeView } from './components/HomeView';
+import { AssistantView } from './components/AssistantView';
 import { AuthScreen } from './components/AuthScreen';
 import { CartDrawer } from './components/CartDrawer';
 import { CheckoutModal } from './components/CheckoutModal';
@@ -35,10 +30,12 @@ import { ShopView, StoreHeader, type AiChatTurn, type CatalogSort } from './comp
 import { SiteFooter } from './components/SiteFooter';
 import { Toast } from './components/Toast';
 import { VoidBackground } from './components/VoidBackground';
+import { navigateToView, viewFromPath, type AppView } from './lib/routes';
 import {
   type DeliveryOption,
   type ShippingAddress,
   formatDeliverySummary,
+  isShippingComplete,
   getShippingAddress,
   saveShippingAddress,
   shippingCostCents,
@@ -67,9 +64,10 @@ interface PendingConsent {
   };
   parsed?: Record<string, unknown>;
   source: 'cart' | 'ai';
+  agentThinking?: string;
+  agentWarnings?: string[];
 }
 
-type View = 'shop' | 'orders';
 type CheckoutStep = 'shipping' | 'review' | 'processing' | 'success';
 
 function renderCartMandateReview(
@@ -77,7 +75,9 @@ function renderCartMandateReview(
   productsBySku: Record<string, Product>,
   shippingCents: number,
   shippingSummary?: string,
-  extra?: React.ReactNode
+  extra?: React.ReactNode,
+  agentThinking?: string,
+  agentWarnings?: string[]
 ) {
   const items = cartMandate.payload.items.map((i, idx) => {
     const product =
@@ -104,6 +104,18 @@ function renderCartMandateReview(
   return (
     <>
       {extra}
+      {agentThinking ? (
+        <p className="agent-thinking" role="note">
+          <strong>Product agent:</strong> {agentThinking}
+        </p>
+      ) : null}
+      {agentWarnings && agentWarnings.length > 0 ? (
+        <ul className="agent-warnings">
+          {agentWarnings.map((w) => (
+            <li key={w}>{w}</li>
+          ))}
+        </ul>
+      ) : null}
       {items}
       <div className="review-row">
         <span>Subtotal</span>
@@ -128,10 +140,10 @@ function renderCartMandateReview(
 }
 
 export function App() {
-  const [authenticated, setAuthenticated] = useState(false);
-  const [user, setUser] = useState<User | null>(null);
+  const [authenticated, setAuthenticated] = useState(() => readSession().loggedIn);
+  const [user, setUser] = useState<User | null>(() => readSession().user);
   const [brokerUrl, setBrokerUrl] = useState('');
-  const [view, setView] = useState<View>('shop');
+  const [view, setView] = useState<AppView>(() => viewFromPath(window.location.pathname));
   const [toast, setToast] = useState<string | null>(null);
 
   const [categories, setCategories] = useState<Category[]>([]);
@@ -147,6 +159,7 @@ export function App() {
   const [productsLoading, setProductsLoading] = useState(false);
   const [productsError, setProductsError] = useState<string>();
   const [featuredProducts, setFeaturedProducts] = useState<Product[]>([]);
+  const [popularProducts, setPopularProducts] = useState<Product[]>([]);
   const [sort, setSort] = useState<CatalogSort>('popular');
   const [inStockOnly, setInStockOnly] = useState(false);
 
@@ -173,7 +186,7 @@ export function App() {
   const [successItems, setSuccessItems] = useState<PendingConsent['cart']['payload']['items']>([]);
 
   const [profileOpen, setProfileOpen] = useState(false);
-  const [profileTab, setProfileTab] = useState<'identity' | 'appearance' | 'payment'>('identity');
+  const [profileTab, setProfileTab] = useState<'identity' | 'appearance' | 'payment' | 'delivery'>('identity');
   const [profileError, setProfileError] = useState<string>();
   const [profileSaved, setProfileSaved] = useState(false);
   const [profileKey, setProfileKey] = useState(0);
@@ -203,6 +216,35 @@ export function App() {
     setToast(msg);
     setTimeout(() => setToast(null), 3200);
   }, []);
+
+  useEffect(() => {
+    const onPopState = () => setView(viewFromPath(window.location.pathname));
+    window.addEventListener('popstate', onPopState);
+    return () => window.removeEventListener('popstate', onPopState);
+  }, []);
+
+  const goToShop = useCallback(
+    (opts?: { category?: string; query?: string }) => {
+      if (opts?.category) {
+        setCategory(opts.category);
+        setPage(1);
+        if (opts.category !== 'all') {
+          setActiveQuery('');
+          setSearchQuery('');
+        }
+      }
+      if (opts?.query !== undefined) {
+        const q = opts.query.trim();
+        setActiveQuery(q);
+        setSearchQuery(q);
+        setPage(1);
+        if (q) setCategory('all');
+      }
+      setView('shop');
+      navigateToView('shop');
+    },
+    []
+  );
 
   const resetSessionUi = useCallback(() => {
     setAiChatHistory([]);
@@ -283,6 +325,17 @@ export function App() {
     setProductsBySku((prev) => ({ ...prev, ...Object.fromEntries(list.map((p) => [p.sku, p])) }));
   }, [brokerUrl, page, category, activeQuery, sort, inStockOnly]);
 
+  const loadPopular = useCallback(async () => {
+    const { ok, data } = await api<{ products?: Product[] }>(
+      brokerUrl,
+      '/api/catalog?limit=8&sort=popular&inStock=1'
+    );
+    if (!ok) return;
+    const list = data.products ?? [];
+    setPopularProducts(list);
+    setProductsBySku((prev) => ({ ...prev, ...Object.fromEntries(list.map((p) => [p.sku, p])) }));
+  }, [brokerUrl]);
+
   const loadFeatured = useCallback(async () => {
     const { ok, data } = await api<{ products?: Product[] }>(brokerUrl, '/api/catalog/featured');
     if (!ok) return;
@@ -297,6 +350,15 @@ export function App() {
     setOrdersLoading(false);
     if (ok) setOrders(data.orders ?? []);
   }, [brokerUrl]);
+
+  const goToView = useCallback(
+    (next: AppView) => {
+      setView(next);
+      navigateToView(next);
+      if (next === 'orders') loadOrders();
+    },
+    [loadOrders]
+  );
 
   const loadAiStatus = useCallback(async () => {
     const { ok, data } = await api<{
@@ -340,7 +402,8 @@ export function App() {
     loadAiStatus();
     loadCategories();
     loadFeatured();
-  }, [authenticated, brokerUrl, loadAiStatus, loadCategories, loadFeatured]);
+    loadPopular();
+  }, [authenticated, brokerUrl, loadAiStatus, loadCategories, loadFeatured, loadPopular]);
 
   useEffect(() => {
     if (!authenticated) return;
@@ -353,10 +416,20 @@ export function App() {
 
   useEffect(() => {
     async function init() {
-      if (!isLoggedIn()) return;
+      if (!isLoggedIn()) {
+        setAuthenticated(false);
+        setUser(null);
+        return;
+      }
+      if (!brokerUrl) return;
+
       const { ok, status, data } = await api<{ user?: User }>(brokerUrl, '/api/auth/me');
       if (!ok) {
-        if (status === 401) clearSession();
+        if (status === 401) {
+          clearSession();
+          setAuthenticated(false);
+          setUser(null);
+        }
         return;
       }
       const u = data.user ?? getUser();
@@ -451,12 +524,19 @@ export function App() {
     setCheckoutTotal(undefined);
     setCheckoutShippingCents(shippingCostCents(subtotal, deliveryOption));
     setCheckoutStatus(undefined);
-    setShippingAddress(getShippingAddress(user.id, user.displayName ?? ''));
-    setCheckoutStep('shipping');
+    const addr = getShippingAddress(user.id, user.displayName ?? '');
+    setShippingAddress(addr);
     setCheckoutOpen(true);
+    if (isShippingComplete(addr)) {
+      setCheckoutStep('review');
+      await prepareCheckoutReview(addr);
+    } else {
+      setCheckoutStep('shipping');
+    }
   };
 
-  const prepareCheckoutReview = async () => {
+  const prepareCheckoutReview = async (addr?: ShippingAddress) => {
+    const shipAddr = addr ?? shippingAddress;
     if (!user?.id) return;
     const current = loadCart(user.id);
     const items = current.map((i) => ({ sku: i.sku, quantity: i.quantity }));
@@ -465,6 +545,8 @@ export function App() {
     const { ok, data } = await api<{
       cartMandate?: PendingConsent['cart'];
       intentMandate?: Mandate;
+      agentThinking?: string;
+      agentWarnings?: string[];
       error?: string;
     }>(brokerUrl, '/api/checkout/prepare', {
       method: 'POST',
@@ -477,10 +559,24 @@ export function App() {
     }
 
     const shipCents = shippingCostCents(data.cartMandate.payload.subtotalCents, deliveryOption);
-    const shipSummary = formatDeliverySummary(shippingAddress, deliveryOption, shipCents);
-    setPendingConsent({ intent: data.intentMandate, cart: data.cartMandate, source: 'cart' });
+    const shipSummary = formatDeliverySummary(shipAddr, deliveryOption, shipCents);
+    setPendingConsent({
+      intent: data.intentMandate,
+      cart: data.cartMandate,
+      source: 'cart',
+      agentThinking: data.agentThinking,
+      agentWarnings: data.agentWarnings,
+    });
     setCheckoutReview(
-      renderCartMandateReview(data.cartMandate, productsBySku, shipCents, shipSummary)
+      renderCartMandateReview(
+        data.cartMandate,
+        productsBySku,
+        shipCents,
+        shipSummary,
+        undefined,
+        data.agentThinking,
+        data.agentWarnings
+      )
     );
     setCheckoutShippingCents(shipCents);
     setCheckoutTotal(data.cartMandate.payload.totalCents + shipCents);
@@ -498,7 +594,15 @@ export function App() {
           <p className="ai-result__summary">{String(pendingConsent.parsed.naturalLanguageIntent ?? '')}</p>
         ) : undefined;
       setCheckoutReview(
-        renderCartMandateReview(pendingConsent.cart, productsBySku, shipCents, shipSummary, extra)
+        renderCartMandateReview(
+          pendingConsent.cart,
+          productsBySku,
+          shipCents,
+          shipSummary,
+          extra,
+          pendingConsent.agentThinking,
+          pendingConsent.agentWarnings
+        )
       );
       setCheckoutShippingCents(shipCents);
       setCheckoutTotal(pendingConsent.cart.payload.totalCents + shipCents);
@@ -560,6 +664,8 @@ export function App() {
       payment?: { transactionId?: string; amountCents?: number; message?: string };
       errors?: string[];
       error?: string;
+      agentThinking?: string;
+      agentRiskNotes?: string[];
     }>(brokerUrl, '/api/submit', {
       method: 'POST',
       body: JSON.stringify({
@@ -581,11 +687,12 @@ export function App() {
         refreshCart();
       }
       if (pendingConsent.source === 'ai' && pendingConsent.parsed) {
+        const payNote = data.agentThinking ? ` ${data.agentThinking}` : '';
         setAiChatHistory((prev) => [
           ...prev,
           {
             role: 'assistant',
-            content: `Purchase approved — ${String(pendingConsent.parsed?.aiSummary ?? 'Order complete')}. Transaction ${data.payment?.transactionId ?? '—'}, charged ${formatPrice(data.payment?.amountCents ?? 0)}.`,
+            content: `Purchase approved — ${String(pendingConsent.parsed?.aiSummary ?? 'Order complete')}. Transaction ${data.payment?.transactionId ?? '—'}, charged ${formatPrice(data.payment?.amountCents ?? 0)}.${payNote}`,
           },
         ]);
       }
@@ -605,29 +712,51 @@ export function App() {
     cartMandate: PendingConsent['cart'],
     parsed?: Record<string, unknown>
   ) => {
-    if (user?.id) {
-      setShippingAddress(getShippingAddress(user.id, user.displayName ?? ''));
-    }
+    const addr =
+      user?.id ? getShippingAddress(user.id, user.displayName ?? '') : getShippingAddress();
+    setShippingAddress(addr);
     const shipCents = shippingCostCents(cartMandate.payload.subtotalCents, deliveryOption);
-    const shipSummary = formatDeliverySummary(shippingAddress, deliveryOption, shipCents);
-    setPendingConsent({ intent: intentMandate, cart: cartMandate, parsed, source: 'ai' });
+    const shipSummary = formatDeliverySummary(addr, deliveryOption, shipCents);
+    const agentThinking =
+      typeof parsed?.agentThinking === 'string' ? parsed.agentThinking : undefined;
+    const agentWarnings = Array.isArray(parsed?.agentWarnings)
+      ? parsed.agentWarnings.filter((w): w is string => typeof w === 'string')
+      : undefined;
+    setPendingConsent({
+      intent: intentMandate,
+      cart: cartMandate,
+      parsed,
+      source: 'ai',
+      agentThinking,
+      agentWarnings,
+    });
     const extra = parsed ? (
       <p className="ai-result__summary">{String(parsed.naturalLanguageIntent ?? '')}</p>
     ) : undefined;
-    setCheckoutReview(renderCartMandateReview(cartMandate, productsBySku, shipCents, shipSummary, extra));
+    setCheckoutReview(
+      renderCartMandateReview(
+        cartMandate,
+        productsBySku,
+        shipCents,
+        shipSummary,
+        extra,
+        agentThinking,
+        agentWarnings
+      )
+    );
     setCheckoutShippingCents(shipCents);
     setCheckoutTotal(cartMandate.payload.totalCents + shipCents);
-    setCheckoutStep('shipping');
+    setCheckoutStep(isShippingComplete(addr) ? 'review' : 'shipping');
     setCheckoutStatus(undefined);
     setCheckoutOpen(true);
   };
 
-  const handleAiChatSend = async () => {
-    const text = aiMessage.trim();
+  const handleAiChatSend = async (overrideText?: string) => {
+    const text = (typeof overrideText === 'string' ? overrideText : aiMessage).trim();
     if (!text || aiBusy) return;
 
     const historyForApi = aiChatHistory.map((t) => ({ role: t.role, content: t.content }));
-    setAiMessage('');
+    if (!overrideText) setAiMessage('');
     setAiChatHistory((prev) => [...prev, { role: 'user', content: text }]);
     setAiBusy(true);
 
@@ -674,7 +803,14 @@ export function App() {
         data.intentMandate &&
         data.cartMandate
       ) {
+        if (user?.id && data.cartMandate.payload?.items) {
+          for (const item of data.cartMandate.payload.items) {
+            addToCart(user.id, item.sku, item.quantity);
+          }
+          refreshCart();
+        }
         openAiCheckout(data.intentMandate, data.cartMandate, data.parsed);
+        showToast('Checkout opened — review and approve payment');
       }
     } finally {
       setAiBusy(false);
@@ -722,15 +858,12 @@ export function App() {
           onSearchQueryChange={setSearchQuery}
           onSearchSubmit={() => {
             const q = searchQuery.trim();
-            setActiveQuery(q);
-            setPage(1);
-            if (q) setCategory('all');
+            goToShop({ query: q });
           }}
-          onNavShop={() => setView('shop')}
-          onNavOrders={() => {
-            setView('orders');
-            loadOrders();
-          }}
+          onNavHome={() => goToView('home')}
+          onNavShop={() => goToShop()}
+          onNavAssistant={() => goToView('assistant')}
+          onNavOrders={() => goToView('orders')}
           onCart={() => {
             setCartOpen(true);
             refreshCart();
@@ -753,13 +886,24 @@ export function App() {
             setActiveQuery('');
             setCategory('all');
             setPage(1);
-            setView('shop');
-            loadCategories();
+            goToView('home');
           }}
         />
 
         <main id="main">
-          {view === 'shop' ? (
+          {view === 'home' ? (
+            <HomeView
+              catalogTotal={catalogTotal}
+              categories={categories}
+              featuredProducts={featuredProducts}
+              popularProducts={popularProducts}
+              onShopAll={() => goToShop({ category: 'all' })}
+              onBrowseCategory={(cat) => goToShop({ category: cat })}
+              onOpenAssistant={() => goToView('assistant')}
+              onProductClick={openProduct}
+              onAddToCart={handleAddToCart}
+            />
+          ) : view === 'shop' ? (
             <ShopView
               catalogTotal={catalogTotal}
               categories={categories}
@@ -771,18 +915,6 @@ export function App() {
               total={total}
               loading={productsLoading}
               loadError={productsError}
-              groqOn={groqOn}
-              groqBadge={
-                <>
-                  {groqLabel}
-                </>
-              }
-              voiceLabel={voiceLabel}
-              brokerUrl={brokerUrl}
-              aiMessage={aiMessage}
-              aiChatHistory={aiChatHistory}
-              aiBusy={aiBusy}
-              featuredProducts={featuredProducts}
               sort={sort}
               inStockOnly={inStockOnly}
               onSortChange={(s) => {
@@ -814,12 +946,23 @@ export function App() {
               onPageChange={setPage}
               onProductClick={openProduct}
               onAddToCart={handleAddToCart}
+            />
+          ) : view === 'assistant' ? (
+            <AssistantView
+              groqOn={groqOn}
+              groqBadge={<>{groqLabel}</>}
+              voiceLabel={voiceLabel}
+              brokerUrl={brokerUrl}
+              aiMessage={aiMessage}
+              aiChatHistory={aiChatHistory}
+              aiBusy={aiBusy}
+              onAddToCart={handleAddToCart}
               onAiMessageChange={setAiMessage}
               onAiChatSend={handleAiChatSend}
               onClearAiChat={handleClearAiChat}
             />
           ) : (
-            <OrdersView orders={orders} loading={ordersLoading} onBack={() => setView('shop')} />
+            <OrdersView orders={orders} loading={ordersLoading} />
           )}
         </main>
 
@@ -880,6 +1023,11 @@ export function App() {
           setProfileTab('payment');
           setProfileOpen(true);
         }}
+        onEditDelivery={() => {
+          closeCheckout();
+          setProfileTab('delivery');
+          setProfileOpen(true);
+        }}
         onShippingChange={setShippingAddress}
         onDeliveryChange={(opt) => {
           setDeliveryOption(opt);
@@ -901,10 +1049,19 @@ export function App() {
           error={profileError}
           saved={profileSaved}
           initialTab={profileTab}
+          shippingAddress={getShippingAddress(user.id, user.displayName ?? '')}
           onClose={() => setProfileOpen(false)}
-          onSave={async ({ displayName, prefs: p, card }) => {
+          onSave={async ({ displayName, prefs: p, card, shippingAddress: addr }) => {
             if (!displayName) {
               setProfileError('Display name is required');
+              return;
+            }
+            const hasPartialShipping =
+              Boolean(addr.line1.trim() || addr.city.trim() || addr.postalCode.trim()) &&
+              !isShippingComplete(addr);
+            if (hasPartialShipping) {
+              setProfileError('Please complete your delivery address or clear the fields');
+              setProfileTab('delivery');
               return;
             }
             if (card.last4.length !== 4) {
@@ -913,6 +1070,8 @@ export function App() {
             }
             saveSavedCard(user.id, card);
             saveProfilePrefs(user.id, p);
+            saveShippingAddress(user.id, addr);
+            setShippingAddress(addr);
             const { ok, data } = await api<{ user?: User; token?: string; error?: string }>(
               brokerUrl,
               '/api/auth/profile',

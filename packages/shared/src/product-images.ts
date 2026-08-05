@@ -166,23 +166,25 @@ const KEYWORD_RULES: Array<{ theme: ImageTheme; patterns: RegExp[] }> = [
     patterns: [/jacket/i, /coat/i, /parka/i, /windbreaker/i, /outerwear/i, /hoodie/i],
   },
   {
+    theme: 'bags',
+    patterns: [/handbag/i, /backpack/i, /shoulder bag/i, /\bbag\b/i, /tote/i, /purse/i, /satchel/i],
+  },
+  {
     theme: 'electronics',
     patterns: [
-      /phone/i,
       /smartphone/i,
-      /tablet/i,
-      /laptop/i,
+      /\bphone\b/i,
+      /\btablet\b/i,
+      /\blaptop\b/i,
       /headphone/i,
       /earbud/i,
+      /smartwatch/i,
+      /\bwatch\b/i,
       /speaker/i,
       /camera/i,
       /console/i,
       /electronics/i,
     ],
-  },
-  {
-    theme: 'bags',
-    patterns: [/handbag/i, /backpack/i, /shoulder bag/i, /\bbag\b/i, /tote/i, /purse/i, /satchel/i],
   },
   {
     theme: 'books',
@@ -204,15 +206,29 @@ const KEYWORD_RULES: Array<{ theme: ImageTheme; patterns: RegExp[] }> = [
 
 const DEMO_SKU_IMAGES: Record<string, string> = {
   'SHOE-RED-HIGH': IMG('photo-1542291026-7eec264c27ff'),
+  'SHOE-RUN-BLK': IMG('photo-1602810318383-e386cc2a3ccf'),
+  'SHOE-WALK-WHT': IMG('photo-1576566588028-4147f3842f27'),
   'JACKET-GREEN-M': IMG('photo-1591047139829-d91aecb6caea'),
+  'JACKET-PUFF-L': IMG('photo-1544022613-e87ca75a784a'),
+  'HOODIE-GRY-XL': IMG('photo-1560769629-975ec94e6a86'),
   'PHONE-17-PRO': IMG('photo-1511707171634-5f897ff02aa9'),
   'HEADPHONES-NC': IMG('photo-1505740420928-5e560c06d30e'),
-  /** Tech / programming — not generic poetry covers */
+  'EARBUDS-PRO': IMG('photo-1590658268037-6bf12165a1df'),
+  'WATCH-SPORT-01': IMG('photo-1523275335684-37898b6baf30'),
+  'TABLET-11': IMG('photo-1544244015-0df4b3ffc6b0'),
+  'LAPTOP-ULTRA': IMG('photo-1496181133206-80ce9b88a853'),
   'BOOK-AI-AGENTS': IMG('photo-149805718-0802f5d0db29'),
+  'BOOK-DESIGN': IMG('photo-1512820790803-83ca734da794'),
+  'BAG-LEATHER-TOTE': IMG('photo-1553062407-98eeb64c6a62'),
+  'BAG-BACKPACK-URB': IMG('photo-1586953208448-b95a79798f07'),
+  'YOGA-MAT-PRO': IMG('photo-1601925260368-ae2f83cf8b7f'),
+  'DUMBBELL-10': IMG('photo-1583454110551-50f94877b87d'),
+  'SKIN-MOIST-50': IMG('photo-1556228720-195a672e8a03'),
+  'COFFEE-BEANS-1KG': IMG('photo-1447933601403-0c6688de566e'),
 };
 
 /** Bump when URL logic changes — stored Unsplash URLs are recomputed. */
-export const PRODUCT_IMAGE_RESOLVER_VERSION = 4;
+export const PRODUCT_IMAGE_RESOLVER_VERSION = 5;
 
 function hashText(text: string): number {
   let h = 0;

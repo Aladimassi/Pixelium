@@ -18,3 +18,5 @@ class PaymentState(TypedDict, total=False):
     transaction_id: str
     message: str
     explanation: str
+    thinking: str
+    risk_notes: list[str]

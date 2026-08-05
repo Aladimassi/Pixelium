@@ -69,7 +69,11 @@ export async function prepareAiPurchase(
   }
 
   return {
-    parsed,
+    parsed: {
+      ...parsed,
+      agentThinking: cartResult.agentThinking,
+      agentWarnings: cartResult.agentWarnings,
+    } as ParsedPurchaseIntent & { agentThinking?: string; agentWarnings?: string[] },
     intentMandate,
     cartMandate: cartResult.cartMandate,
   };

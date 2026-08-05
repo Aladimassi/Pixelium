@@ -8,9 +8,56 @@
   <link rel="preconnect" href="https://fonts.googleapis.com" />
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
   <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600&family=JetBrains+Mono:wght@400;500&family=Space+Grotesk:wght@400;500;600;700&display=swap" rel="stylesheet" />
+  <style>
+    html {
+      color-scheme: dark;
+      background: #030304;
+    }
+    body {
+      margin: 0;
+      background: #030304;
+      color: #fff;
+    }
+    #root {
+      min-height: 100vh;
+      min-height: 100dvh;
+      background: #030304;
+    }
+    .app-boot-fallback {
+      min-height: 100vh;
+      min-height: 100dvh;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      padding: 1.5rem;
+      text-align: center;
+      color: #e2e8f0;
+      font-family: system-ui, sans-serif;
+      font-size: 1rem;
+      letter-spacing: 0.02em;
+    }
+    .app-boot-fallback--error {
+      color: #fca5a5;
+      flex-direction: column;
+      gap: 0.75rem;
+    }
+  </style>
+  <script>
+    window.addEventListener('error', function (event) {
+      var root = document.getElementById('root');
+      if (!root || root.querySelector('.app-boot-fallback--error')) return;
+      if (root.childElementCount === 0 || root.textContent.trim() === '') {
+        root.innerHTML =
+          '<div class="app-boot-fallback app-boot-fallback--error" role="alert">Unable to load Pixulium Store. Try a hard refresh (Ctrl+Shift+R) or clear site data for this domain.</div>';
+      }
+      console.error(event.error || event.message);
+    });
+  </script>
 </head>
 <body class="font-body">
-  <div id="root"></div>
+  <div id="root">
+    <div class="app-boot-fallback" role="status">Loading Pixulium Store…</div>
+  </div>
   <script type="module" src="/src/client/main.tsx"></script>
 </body>
 </html>

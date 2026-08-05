@@ -54,6 +54,7 @@ def invoke(body: ProductInvokeRequest) -> dict[str, Any]:
         return ProductSearchResponse(
             products=result.get("products", []),
             rankedSku=result.get("ranked_sku", ""),
+            thinking=result.get("thinking"),
         ).model_dump()
 
     if body.action == "build_cart":
@@ -67,7 +68,15 @@ def invoke(body: ProductInvokeRequest) -> dict[str, Any]:
             load_catalog()
             result = agent.invoke(payload)
         if result.get("error"):
-            return ProductCartResponse(error=result["error"]).model_dump(exclude_none=True)
-        return ProductCartResponse(cartMandate=result.get("cart_mandate")).model_dump(exclude_none=True)
+            return ProductCartResponse(
+                error=result["error"],
+                thinking=result.get("thinking"),
+                warnings=result.get("warnings"),
+            ).model_dump(exclude_none=True)
+        return ProductCartResponse(
+            cartMandate=result.get("cart_mandate"),
+            thinking=result.get("thinking"),
+            warnings=result.get("warnings") or None,
+        ).model_dump(exclude_none=True)
 
     return ProductCartResponse(error=f"Unknown action: {body.action}").model_dump(exclude_none=True)

@@ -113,7 +113,10 @@ function buildCartLocally(
 export async function buildCart(
   intentMandate: IntentMandate,
   items: Array<{ sku: string; quantity: number }>
-): Promise<{ cartMandate: CartMandate } | { error: string }> {
+): Promise<
+  | { cartMandate: CartMandate; agentThinking?: string; agentWarnings?: string[] }
+  | { error: string }
+> {
   // Broker already validated SKUs against MySQL — pass snapshots so the Python
   // agent does not need its own catalog in sync (avoids "Unknown SKU" on AMZ-* etc.)
   const enrichedItems: EnrichedCartItem[] = items.map((item) => {
@@ -129,6 +132,8 @@ export async function buildCart(
 
   let cartMandate: CartMandate | undefined;
   let agentError: string | undefined;
+  let agentThinking: string | undefined;
+  let agentWarnings: string[] | undefined;
 
   try {
     const raw = await sendToAgent<Record<string, unknown>>(ECOMMERCE_URL, {
@@ -138,6 +143,10 @@ export async function buildCart(
     });
     cartMandate = (raw.cartMandate ?? raw.cart_mandate) as CartMandate | undefined;
     agentError = typeof raw.error === 'string' ? raw.error : undefined;
+    agentThinking = typeof raw.thinking === 'string' ? raw.thinking : undefined;
+    if (Array.isArray(raw.warnings)) {
+      agentWarnings = raw.warnings.filter((w): w is string => typeof w === 'string');
+    }
   } catch (err) {
     console.warn(
       '[broker] Product agent unavailable, building cart locally:',
@@ -162,7 +171,7 @@ export async function buildCart(
     { mandateId: cartMandate.id, orderId: cartMandate.payload.cartId }
   );
 
-  return { cartMandate };
+  return { cartMandate, agentThinking, agentWarnings };
 }
 
 export function createPaymentMandate(
@@ -196,6 +205,8 @@ export interface BrokerResult {
   payment?: PaymentResult;
   chain?: MandateChain;
   errors?: string[];
+  agentThinking?: string;
+  agentRiskNotes?: string[];
 }
 
 export async function submitPayment(chain: MandateChain): Promise<BrokerResult> {
@@ -233,6 +244,13 @@ export async function submitPayment(chain: MandateChain): Promise<BrokerResult> 
     message: String(raw.message ?? raw.explanation ?? 'Payment failed'),
   };
 
+  const agentThinking = typeof raw.thinking === 'string' ? raw.thinking : undefined;
+  const agentRiskNotes = Array.isArray(raw.riskNotes)
+    ? raw.riskNotes.filter((n): n is string => typeof n === 'string')
+    : Array.isArray(raw.risk_notes)
+      ? raw.risk_notes.filter((n): n is string => typeof n === 'string')
+      : undefined;
+
   if (paymentResult.success) {
     auditStore.markPaymentProcessed(
       chain.payment.payload.paymentId,
@@ -251,6 +269,8 @@ export async function submitPayment(chain: MandateChain): Promise<BrokerResult> 
     payment: paymentResult,
     chain,
     errors: paymentResult.success ? undefined : [paymentResult.message],
+    agentThinking,
+    agentRiskNotes,
   };
 }
 

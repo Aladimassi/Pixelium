@@ -13,7 +13,24 @@ export function getToken(): string | null {
 
 export function getUser(): User | null {
   const raw = localStorage.getItem(USER_KEY);
-  return raw ? (JSON.parse(raw) as User) : null;
+  if (!raw) return null;
+  try {
+    return JSON.parse(raw) as User;
+  } catch {
+    localStorage.removeItem(USER_KEY);
+    return null;
+  }
+}
+
+export function readSession(): { loggedIn: boolean; user: User | null } {
+  try {
+    const loggedIn = isLoggedIn();
+    const user = loggedIn ? getUser() : null;
+    return { loggedIn: loggedIn && Boolean(user), user };
+  } catch {
+    clearSession();
+    return { loggedIn: false, user: null };
+  }
 }
 
 export function saveSession(token: string, user: User): void {

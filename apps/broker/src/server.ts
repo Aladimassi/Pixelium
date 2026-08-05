@@ -634,7 +634,12 @@ function registerProtectedRoutes(requireAuth: ReturnType<typeof createRequireAut
     if ('error' in cartResult) {
       return res.status(400).json({ error: cartResult.error });
     }
-    res.json({ intentMandate: intent, cartMandate: cartResult.cartMandate });
+    res.json({
+      intentMandate: intent,
+      cartMandate: cartResult.cartMandate,
+      agentThinking: cartResult.agentThinking,
+      agentWarnings: cartResult.agentWarnings,
+    });
   });
 
   app.post('/api/checkout', requireAuth, async (req, res) => {

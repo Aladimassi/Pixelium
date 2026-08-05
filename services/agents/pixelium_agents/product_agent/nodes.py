@@ -1,4 +1,4 @@
-"""Product Agent sub-agents. Deterministic except rank (LLM pluggable)."""
+"""Product Agent sub-agents — LLM reasoning when GROQ_API_KEY is set."""
 from __future__ import annotations
 
 import uuid
@@ -6,6 +6,7 @@ from concurrent.futures import ThreadPoolExecutor
 from datetime import datetime, timedelta, timezone
 
 from ..shared import TAX_RATE, create_mandate, get_product, search_products
+from ..shared.llm_think import think_cart_match, think_rank_products
 from .state import ProductState
 
 
@@ -49,13 +50,29 @@ def sub_stock(state: ProductState) -> ProductState:
 
 
 def sub_rank(state: ProductState) -> ProductState:
-    """Rank sub-agent — swap this heuristic for a Groq call in production."""
+    """Rank products — Groq reasoning when configured, else keyword heuristic."""
     candidates = state.get("filtered_results") or state.get("search_results") or []
-    q = (state.get("query") or "").lower()
+    q = state.get("query") or ""
+    if not candidates:
+        return {"ranked_sku": "", "products": [], "thinking": "No catalog matches for that query."}
+
+    llm = think_rank_products(q, candidates)
+    if llm:
+        sku = str(llm.get("sku") or "").strip()
+        valid = {p["sku"] for p in candidates}
+        if sku in valid:
+            ordered = sorted(candidates, key=lambda p: p["sku"] != sku)
+            return {
+                "ranked_sku": sku,
+                "products": ordered,
+                "thinking": str(llm.get("reasoning") or "Selected best catalog match."),
+            }
+
+    q_lower = q.lower()
 
     def score(p: dict) -> int:
         s = 0
-        for word in q.split():
+        for word in q_lower.split():
             if word in p["name"].lower():
                 s += 2
             if word in p["category"]:
@@ -63,9 +80,11 @@ def sub_rank(state: ProductState) -> ProductState:
         return s
 
     ranked = sorted(candidates, key=score, reverse=True)
+    top = ranked[0]["sku"] if ranked else ""
     return {
-        "ranked_sku": ranked[0]["sku"] if ranked else "",
+        "ranked_sku": top,
         "products": ranked,
+        "thinking": f"Ranked by keyword relevance for “{q}”.",
     }
 
 
@@ -77,6 +96,36 @@ def parallel_search(state: ProductState) -> ProductState:
         filter_out = pool.submit(sub_filter, merged).result()
         merged = {**merged, **filter_out}
     return {**search_out, **filter_out, **sub_rank(merged)}
+
+
+def sub_think_cart(state: ProductState) -> ProductState:
+    """LLM reviews intent vs line items before the merchant signs the cart."""
+    intent = state.get("intent_mandate") or {}
+    items = state.get("items") or []
+    nl = intent.get("payload", {}).get("naturalLanguageIntent", "Purchase request")
+    previews: list[dict] = []
+    for item in items:
+        product = _resolve_line_product(item)
+        previews.append(
+            {
+                "sku": item.get("sku"),
+                "name": product["name"] if product else item.get("name"),
+                "quantity": item.get("quantity", 1),
+            }
+        )
+
+    llm = think_cart_match(nl, previews)
+    if llm:
+        warnings = [str(w) for w in (llm.get("warnings") or []) if w]
+        return {
+            "thinking": str(llm.get("reasoning") or "Reviewed cart against shopper intent."),
+            "warnings": warnings,
+        }
+
+    return {
+        "thinking": f"Preparing cart for: {nl}",
+        "warnings": [],
+    }
 
 
 def sub_cart_builder(state: ProductState) -> ProductState:

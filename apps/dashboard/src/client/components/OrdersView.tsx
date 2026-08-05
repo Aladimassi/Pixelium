@@ -11,20 +11,16 @@ export interface Order {
 interface OrdersViewProps {
   orders: Order[];
   loading: boolean;
-  onBack: () => void;
 }
 
-export function OrdersView({ orders, loading, onBack }: OrdersViewProps) {
+export function OrdersView({ orders, loading }: OrdersViewProps) {
   return (
-    <div id="orders-view">
+    <div id="orders-view" className="page-view">
       <section className="section section--inverted">
         <div className="container">
           <div className="section-header">
             <p className="section-header__eyebrow">Your account</p>
             <h2>Order History</h2>
-            <button type="button" id="btn-back-shop" className="btn-ghost" onClick={onBack}>
-              ← Back to shop
-            </button>
           </div>
           <div className="table-wrap">
             <table id="orders-table">

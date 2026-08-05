@@ -1,13 +1,11 @@
-"""Payment Agent sub-agents. Proof pipeline is 100% deterministic (no LLM).
-
-The Explainer is the only LLM-pluggable node and runs AFTER the decision.
-"""
+"""Payment Agent — deterministic proof + LLM risk analysis & explanation."""
 from __future__ import annotations
 
 import uuid
 from concurrent.futures import ThreadPoolExecutor
 
 from ..shared import is_expired, verify_signature
+from ..shared.llm_think import think_explain_payment, think_payment_review
 from .state import PaymentState
 
 # Replay guard store (in-memory, like the Node payment agent)
@@ -66,21 +64,41 @@ def sub_replay_guard(state: PaymentState) -> dict:
     return {"replay_ok": True, "errors": []}
 
 
+def sub_think_payment(state: PaymentState) -> dict:
+    """LLM risk analyst — advises only; never overrides cryptographic proof."""
+    chain = state["mandate_chain"]
+    llm = think_payment_review(chain)
+    if llm:
+        notes = [str(n) for n in (llm.get("riskNotes") or llm.get("risk_notes") or []) if n]
+        return {
+            "thinking": str(llm.get("reasoning") or "Reviewed mandate chain for consent coherence."),
+            "risk_notes": notes,
+            "errors": [],
+        }
+    intent_text = chain["intent"]["payload"].get("naturalLanguageIntent", "purchase")
+    return {
+        "thinking": f"Analyzing consent chain for: {intent_text}",
+        "risk_notes": [],
+        "errors": [],
+    }
+
+
 def parallel_proof(state: PaymentState) -> PaymentState:
-    """Run the 4 proof sub-agents concurrently and merge results."""
-    with ThreadPoolExecutor(max_workers=4) as pool:
+    """Run proof checks + LLM risk review concurrently."""
+    with ThreadPoolExecutor(max_workers=5) as pool:
         futures = [
             pool.submit(sub_verify_signatures, state),
             pool.submit(sub_verify_chain_links, state),
             pool.submit(sub_verify_amount, state),
             pool.submit(sub_replay_guard, state),
+            pool.submit(sub_think_payment, state),
         ]
         results = [f.result() for f in futures]
 
     errors: list[str] = []
     merged: PaymentState = {}
     for r in results:
-        errors.extend(r.pop("errors"))
+        errors.extend(r.pop("errors", []))
         merged.update(r)
 
     merged["proof_errors"] = errors
@@ -104,17 +122,31 @@ def sub_charge_executor(state: PaymentState) -> PaymentState:
 
 
 def sub_explainer(state: PaymentState) -> PaymentState:
-    """Human-readable outcome. Plug Groq here in production — never decides."""
-    if state.get("success"):
-        chain = state["mandate_chain"]
+    """Human-readable outcome — Groq when available."""
+    chain = state["mandate_chain"]
+    proof_errors = state.get("proof_errors") or []
+    success = bool(state.get("success"))
+    txn = state.get("transaction_id")
+
+    llm_text = think_explain_payment(
+        success=success,
+        chain=chain,
+        transaction_id=txn,
+        proof_errors=proof_errors,
+        prior_reasoning=state.get("thinking"),
+    )
+    if llm_text:
+        return {"explanation": llm_text, "success": success}
+
+    if success:
         items = ", ".join(
             f"{i['quantity']}x {i['name']}" for i in chain["cart"]["payload"]["items"]
         )
         amount = chain["payment"]["payload"]["amountCents"] / 100
         text = (
             f"APPROVED: charged ${amount:.2f} for {items}. "
-            f"Transaction {state.get('transaction_id')}."
+            f"Transaction {txn}."
         )
     else:
-        text = "BLOCKED: " + "; ".join(state.get("proof_errors") or ["unknown error"])
-    return {"explanation": text, "success": bool(state.get("success"))}
+        text = "BLOCKED: " + "; ".join(proof_errors or ["unknown error"])
+    return {"explanation": text, "success": success}

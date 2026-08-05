@@ -28,28 +28,62 @@ export function isPurchaseIntentMessage(message: string): boolean {
 
   // Recommendation / exploration — suggest products, do not checkout.
   if (isAdvisoryMessage(text)) return false;
+
+  const hasBuyVerb = /\b(buy|purchase|order|checkout|i('ll| will) take|add to cart)\b/i.test(text);
+
+  // Questions and comparisons without a buy command stay in advisory chat.
   if (
     /\b(what do you|what would you|which (one|would)|show me|help me|compare|options?|ideas?|recommend|suggest|reccommend|reccomend)\b/i.test(
       text
-    )
+    ) &&
+    !hasBuyVerb
   ) {
     return false;
   }
 
-  // "I want to buy shoes" without a concrete purchase command — still browsing.
+  // Vague browsing — "I want to buy gifts" with no concrete checkout phrase.
   if (
     /\b(i want to buy|looking to buy|thinking (about|of) buying|need to buy|shopping for)\b/i.test(text) &&
-    !/\b(buy (me |the |those |these |it|them|that)|purchase (the |those |it|them)|order (the |those |it|them|now))\b/i.test(
+    !/\b(buy\s+\S|purchase\s+\S|order\s+\S|checkout|i('ll| will) take|add to cart)\b/i.test(text)
+  ) {
+    return false;
+  }
+
+  // Strong checkout signals (follow-ups after recommendations).
+  if (
+    /\b(checkout(\s+now)?|add\s+(it|them|that|this)\s+to(\s+my)?\s+cart|i want (this|that|it|the one))\b/i.test(
       text
     )
   ) {
-    return false;
+    return true;
   }
 
-  // Explicit checkout commands only.
-  return /\b(buy\s+(me\s+)?(the|those|these|it|them|that|this)|purchase\s+(the|those|these|it|them|that|this)|order\s+(the|those|these|it|them|that|this|now)|checkout(\s+now)?|i('ll| will) take(\s+(it|them|those|that|the|this|one|this item|that item))?|take\s+(this|that|it|the|those|these)(\s+item|\s+one)?|get me\s+(the|those|that|this|some)?|grab\s+(me\s+)?(the|those|that|this)?|add\s+(it|them|that)\s+to(\s+my)?\s+cart|i want (this|that|it|the one))\b/i.test(
-    text
-  );
+  if (
+    /\b(i('ll| will) take|take\s+(this|that|it|the|those|these)(\s+(one|item))?|get me|grab\s+(me\s+)?)\b/i.test(
+      text
+    )
+  ) {
+    return true;
+  }
+
+  if (
+    /\b(buy\s+(me\s+)?(the|those|these|it|them|that|this)|purchase\s+(the|those|these|it|them|that|this)|order\s+(the|those|these|it|them|that|this|now))\b/i.test(
+      text
+    )
+  ) {
+    return true;
+  }
+
+  // Direct product purchase: "buy headphones", "order red sneakers under $150".
+  const buyMatch = text.match(/\b(buy|purchase|order)\s+(?:me\s+)?(.+)/i);
+  if (buyMatch) {
+    const rest = buyMatch[2].replace(/[!?.]+$/, '').trim();
+    if (rest.length > 0 && !/^(something|anything|stuff|things?|a gift)$/i.test(rest)) {
+      return true;
+    }
+  }
+
+  return false;
 }
 
 export function isAdvisoryMessage(message: string): boolean {

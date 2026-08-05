@@ -10,6 +10,7 @@ import {
   isShippingComplete,
   shippingCostCents,
 } from '../lib/shipping';
+import { ShippingAddressFields } from './ShippingAddressFields';
 import { SavedCardView } from './SavedCardView';
 import { useDialog } from '../hooks/useDialog';
 
@@ -50,6 +51,7 @@ interface CheckoutModalProps {
   onShippingChange: (addr: ShippingAddress) => void;
   onDeliveryChange: (option: DeliveryOption) => void;
   onContinueToReview: () => void;
+  onEditDelivery?: () => void;
 }
 
 export function CheckoutModal({
@@ -80,6 +82,7 @@ export function CheckoutModal({
   onShippingChange,
   onDeliveryChange,
   onContinueToReview,
+  onEditDelivery,
 }: CheckoutModalProps) {
   const dialogRef = useDialog(open);
   const [localAddr, setLocalAddr] = useState(shippingAddress);
@@ -92,6 +95,7 @@ export function CheckoutModal({
 
   const previewShipping = shippingCostCents(subtotalCents, deliveryOption);
   const shippingReady = isShippingComplete(localAddr);
+  const usingSavedAddress = shippingReady && isShippingComplete(shippingAddress);
 
   const updateAddr = (patch: Partial<ShippingAddress>) => {
     const next = { ...localAddr, ...patch };
@@ -122,64 +126,23 @@ export function CheckoutModal({
               if (shippingReady) onContinueToReview();
             }}
           >
-            <div className="auth-field">
-              <label htmlFor="ship-name">Full name</label>
-              <input
-                id="ship-name"
-                value={localAddr.fullName}
-                onChange={(e) => updateAddr({ fullName: e.target.value })}
-                required
-                autoComplete="name"
-              />
-            </div>
-            <div className="auth-field">
-              <label htmlFor="ship-name-line1">Address</label>
-              <input
-                id="ship-name-line1"
-                value={localAddr.line1}
-                onChange={(e) => updateAddr({ line1: e.target.value })}
-                required
-                autoComplete="address-line1"
-              />
-            </div>
-            <div className="auth-field">
-              <label htmlFor="ship-line2">Apartment, suite (optional)</label>
-              <input
-                id="ship-line2"
-                value={localAddr.line2}
-                onChange={(e) => updateAddr({ line2: e.target.value })}
-                autoComplete="address-line2"
-              />
-            </div>
-            <div className="profile-form-row">
-              <div className="auth-field">
-                <label htmlFor="ship-city">City</label>
-                <input
-                  id="ship-city"
-                  value={localAddr.city}
-                  onChange={(e) => updateAddr({ city: e.target.value })}
-                  required
-                />
-              </div>
-              <div className="auth-field">
-                <label htmlFor="ship-postal">Postal code</label>
-                <input
-                  id="ship-postal"
-                  value={localAddr.postalCode}
-                  onChange={(e) => updateAddr({ postalCode: e.target.value })}
-                  required
-                />
-              </div>
-            </div>
-            <div className="auth-field">
-              <label htmlFor="ship-country">Country</label>
-              <input
-                id="ship-country"
-                value={localAddr.country}
-                onChange={(e) => updateAddr({ country: e.target.value })}
-                required
-              />
-            </div>
+            {usingSavedAddress ? (
+              <p className="saved-address-banner" role="status">
+                Using your saved delivery address —{' '}
+                {onEditDelivery ? (
+                  <button type="button" className="btn-link" onClick={onEditDelivery}>
+                    edit in Profile
+                  </button>
+                ) : (
+                  'you can update it below'
+                )}
+              </p>
+            ) : (
+              <p className="hint profile-field-hint">
+                Save your address in Profile → Delivery for faster checkout next time.
+              </p>
+            )}
+            <ShippingAddressFields address={localAddr} onChange={updateAddr} idPrefix="ship" />
             <fieldset className="delivery-options">
               <legend className="section-header__eyebrow">Delivery method</legend>
               {DELIVERY_OPTIONS.map((opt) => {

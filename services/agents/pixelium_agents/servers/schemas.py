@@ -24,11 +24,14 @@ class ProductInvokeRequest(BaseModel):
 class ProductSearchResponse(BaseModel):
     products: list[dict[str, Any]] = Field(default_factory=list)
     rankedSku: str = ""
+    thinking: str | None = None
 
 
 class ProductCartResponse(BaseModel):
     cartMandate: dict[str, Any] | None = None
     error: str | None = None
+    thinking: str | None = None
+    warnings: list[str] | None = None
 
 
 class PaymentInvokeRequest(BaseModel):
@@ -44,3 +47,5 @@ class PaymentInvokeResponse(BaseModel):
     message: str = ""
     explanation: str | None = None
     proofErrors: list[str] | None = None
+    thinking: str | None = None
+    riskNotes: list[str] | None = None
