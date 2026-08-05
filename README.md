@@ -2,15 +2,15 @@
 
 # Pixelium Consent Commerce
 
-**Commerce agentique avec consentement humain — Stage Pixelium 2026**
+**Commerce agentique avec consentement humain — Pixelium 2026**
 
 [![Live Demo](https://img.shields.io/badge/D%C3%A9mo-en%20ligne-0f3460?style=for-the-badge&logo=googlechrome&logoColor=white)](https://pixelium.duckdns.org)
 [![GitHub](https://img.shields.io/badge/GitHub-Pixeliumstg-16213e?style=for-the-badge&logo=github&logoColor=white)](https://github.com/Aladimassi/Pixeliumstg)
-[![Architecture PDF](https://img.shields.io/badge/Doc-Encadrant%20(PDF)-e94560?style=for-the-badge&logo=adobeacrobatreader&logoColor=white)](https://github.com/Aladimassi/Pixeliumstg/blob/main/docs/ARCHITECTURE_ENCADRANT.pdf)
+[![Documentation](https://img.shields.io/badge/Docs-Architecture-e94560?style=for-the-badge&logo=readthedocs&logoColor=white)](./docs/ARCHITECTURE_ENCADRANT.pdf)
 
 *Des agents IA qui achètent pour vous — seulement quand vous le décidez.*
 
-[Essayer la démo](https://pixelium.duckdns.org) · [Documentation encadrant](#-pour-lencadrant) · [Démarrage rapide](#-démarrage-rapide)
+[Essayer la démo](https://pixelium.duckdns.org) · [Documentation](#-documentation) · [Démarrage rapide](#-démarrage-rapide)
 
 </div>
 
@@ -32,39 +32,20 @@ Un **Consent Broker** central valide, signe et journalise chaque étape. Les age
 | | |
 |:--|:--|
 | **Démo en production** | [https://pixelium.duckdns.org](https://pixelium.duckdns.org) |
-| **Compte démo** | `demo@pixelium.com` / `demo123` |
-| **Carte démo** | `4242 4242 4242 4242` (simulation) |
 | **Dépôt** | [github.com/Aladimassi/Pixeliumstg](https://github.com/Aladimassi/Pixeliumstg) |
 
 ---
 
-## Pour l'encadrant
-
-> **Document principal** — architecture complète, flux mandats, RAG, sécurité, déploiement Azure et guide de démonstration (~15 sections).
-
-| Format | Lien direct |
-|--------|-------------|
-| **PDF (recommandé)** | [📄 ARCHITECTURE_ENCADRANT.pdf](./docs/ARCHITECTURE_ENCADRANT.pdf) |
-| **HTML** | [🌐 ARCHITECTURE_ENCADRANT.html](./docs/ARCHITECTURE_ENCADRANT.html) |
-| **Sur GitHub** | [Voir le PDF en ligne](https://github.com/Aladimassi/Pixeliumstg/blob/main/docs/ARCHITECTURE_ENCADRANT.pdf) |
-
-**Autres livrables du stage**
+## Documentation
 
 | Document | Description |
 |----------|-------------|
-| [Rapport final](./docs/FINAL_REPORT.md) | Synthèse du projet et résultats |
+| [Architecture (PDF)](./docs/ARCHITECTURE_ENCADRANT.pdf) | Vue d'ensemble complète du système |
+| [Architecture (HTML)](./docs/ARCHITECTURE_ENCADRANT.html) | Même contenu, format web |
 | [Format des mandats](./docs/MANDATE_FORMAT.md) | Spécification Intent / Cart / Payment |
-| [Sécurité](./docs/SECURITY_FINDINGS.md) | Tests adversariaux et findings |
-| [Usabilité](./docs/USABILITY.md) | Étude utilisateur |
-| [Script de démo](./docs/DEMO_SCRIPT.md) | Scénario pas-à-pas pour la soutenance |
 | [Déploiement](./docs/DEPLOY.md) | Docker, HTTPS, VPS / Azure |
-
-**Scénario de démo suggéré (5 min)**
-
-1. Ouvrir [pixelium.duckdns.org](https://pixelium.duckdns.org) → connexion `demo@pixelium.com`
-2. Chat : *« Que me recommandes-tu pour courir en hiver ? »* → l'IA propose des produits **sans** ouvrir le checkout
-3. Chat : *« Achète-moi les chaussures de running »* → checkout s'ouvre → l'utilisateur **approuve** le paiement
-4. Admin → voir la piste d'audit de la transaction
+| [Sécurité](./docs/SECURITY_FINDINGS.md) | Tests adversariaux et findings |
+| [Script de démo](./docs/DEMO_SCRIPT.md) | Scénario pas-à-pas |
 
 ---
 
@@ -211,7 +192,7 @@ pixelium-consent-commerce/
 │   └── agents/             # Agents LangGraph Python (:4001, :4002)
 ├── docker/                 # Dockerfiles + nginx.conf
 ├── scripts/                # Déploiement Azure / VPS
-└── docs/                   # Rapports, specs, doc encadrant
+└── docs/                   # Rapports, specs, architecture
 ```
 
 | Service | Port | Rôle |
@@ -277,7 +258,7 @@ npm run complete             # Pipeline 8 semaines (install → verify)
 
 ---
 
-## Roadmap du stage (8 semaines)
+## Roadmap
 
 | Semaine | Focus | Statut |
 |---------|-------|--------|
