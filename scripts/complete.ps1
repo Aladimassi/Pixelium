@@ -68,7 +68,7 @@ $weeks = @(
   @{ W = "2-3"; Name = "A2A e-commerce + payment agents"; Check = (Test-Health "http://localhost:4001/health") -and (Test-Health "http://localhost:4002/health") },
   @{ W = 4; Name = "Consent broker + realtime flow"; Check = $true },
   @{ W = 5; Name = "Delegated flow + monitor"; Check = $true },
-  @{ W = 6; Name = "Audit dashboard"; Check = (Test-Path "packages/dashboard/src/public/index.html") },
+  @{ W = 6; Name = "Audit dashboard"; Check = (Test-Path "apps/dashboard/index.html") },
   @{ W = 7; Name = "Adversarial security pass"; Check = (Test-Path "docs/SECURITY_FINDINGS.md") },
   @{ W = 8; Name = "Final report + demo script"; Check = (Test-Path "docs/FINAL_REPORT.md") }
 )

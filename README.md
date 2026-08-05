@@ -15,10 +15,35 @@ Two A2A-speaking agents (e-commerce + payment) communicate through a **consent b
                              └────────┬─────────┘
                                       │ REST
                              ┌────────▼─────────┐
-                             │ Audit Dashboard  │
+                             │  Pixelium Store  │
+                             │  (React + AI)    │
                              │  :3000           │
                              └──────────────────┘
 ```
+
+## Monorepo layout
+
+```
+pixelium-consent-commerce/
+├── apps/
+│   ├── dashboard/          # React store UI (:3000)
+│   └── broker/             # Consent broker API (:4000)
+├── packages/
+│   ├── shared/             # Mandates, signing, types
+│   ├── audit/              # Order audit log
+│   ├── auth/               # MySQL users + JWT
+│   └── catalog/            # MySQL product store
+├── services/
+│   └── agents/             # Python LangGraph agents (:4001, :4002)
+├── scripts/                # verify.ps1, complete.ps1
+└── docs/                   # Reports, specs, demo scripts
+```
+
+| Folder | What runs here |
+|--------|----------------|
+| `apps/` | Deployable applications (Node.js) |
+| `packages/` | Shared libraries consumed by apps |
+| `services/` | Standalone Python services (pip, not npm) |
 
 ## Fastest way to finish (all 8 weeks)
 
@@ -32,13 +57,28 @@ Details: [docs/WEEKS.md](./docs/WEEKS.md) · Submit: [docs/SUBMISSION_CHECKLIST.
 ## Quick Start
 
 ```bash
-cd pixelium-consent-commerce
 npm install
+pip install -r services/agents/requirements.txt
 npm run build
 npm run dev
 ```
 
-Open http://localhost:3000 — use **Guided Purchase** for the consent wizard.
+Open http://localhost:3000 — sign in, browse the catalog, use the **AI assistant**, or checkout from the cart.
+
+## Deploy (production)
+
+Docker Compose deployment (VPS or local):
+
+```bash
+cp .env.production.example .env   # edit passwords + GROQ_API_KEY
+docker compose up -d --build
+```
+
+Open http://localhost — see [docs/DEPLOY.md](./docs/DEPLOY.md) for HTTPS, VPS, and troubleshooting.
+
+```powershell
+npm run deploy   # Windows helper script
+```
 
 ## Commands
 
@@ -47,25 +87,30 @@ npm run demo:realtime      # Human-present flow
 npm run demo:delegated     # Pre-authorized delegated flow
 npm run demo:ai           # Groq natural-language purchase
 npm run test:adversarial   # Security test pass
+npm run test:agents        # Python agent unit tests (21)
 npm run verify             # Build + demos + tests (agents must be running)
 ```
 
-## Packages
+## Project layout
 
-| Package | Port | Role |
-|---------|------|------|
-| `@pixelium/ecommerce-agent` | 4001 | Catalog, cart, merchant-signed Cart Mandate |
-| `@pixelium/payment-agent` | 4002 | Mock payment processor |
-| `@pixelium/consent-broker` | 4000 | Mandate validation, orchestration, audit API |
-| `@pixelium/dashboard` | 3000 | Reconciliation UI + consent wizard |
-| `@pixelium/shared` | — | Mandate types, HMAC signing, mock catalog |
-| `@pixelium/audit` | — | JSON file audit store |
+| Path | Port | Role |
+|------|------|------|
+| `apps/dashboard` | 3000 | React store UI (shop, cart, AI, profile) |
+| `apps/broker` | 4000 | REST API + **orchestration** (only boss) |
+| `packages/shared` | — | Mandates, HMAC signing, catalog search |
+| `packages/auth` | — | MySQL users + JWT |
+| `packages/catalog` | — | MySQL product store |
+| `packages/audit` | — | Order audit log |
+| `services/agents` product agent | 4001 | LangGraph: cart builder |
+| `services/agents` payment agent | 4002 | LangGraph: payment proof + charge |
+
+Node.js apps live in `apps/`. Shared TS libraries in `packages/`. Python LangGraph agents in `services/agents/` — the broker calls them over HTTP.
 
 ## Deliverables (complete)
 
 | Deliverable | Location |
 |-------------|----------|
-| Working prototype | `packages/*` |
+| Working prototype | `apps/`, `packages/`, `services/` |
 | Mandate spec | [docs/MANDATE_FORMAT.md](./docs/MANDATE_FORMAT.md) |
 | Final report | [docs/FINAL_REPORT.md](./docs/FINAL_REPORT.md) |
 | Security memo | [docs/SECURITY_FINDINGS.md](./docs/SECURITY_FINDINGS.md) |

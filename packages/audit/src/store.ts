@@ -5,6 +5,7 @@ import type { AuditRecord, MandateChain } from '@pixelium/shared';
 
 export interface OrderSummary {
   orderId: string;
+  userId: string;
   flowMode: string;
   authorizedAmountCents: number;
   chargedAmountCents: number | null;
@@ -61,6 +62,19 @@ export class AuditStore {
     return record;
   }
 
+  private resolveUserId(
+    order: OrderSummary & { mandateChainJson?: string }
+  ): string | undefined {
+    if (order.userId) return order.userId;
+    if (!order.mandateChainJson) return undefined;
+    try {
+      const chain = JSON.parse(order.mandateChainJson) as MandateChain;
+      return chain.intent.payload.userId;
+    } catch {
+      return undefined;
+    }
+  }
+
   upsertOrderFromChain(chain: MandateChain, status: OrderSummary['status'] = 'pending'): OrderSummary {
     const orderId = chain.payment.payload.paymentId;
     const now = new Date().toISOString();
@@ -71,6 +85,7 @@ export class AuditStore {
     const existing = this.data.orders[orderId];
     const summary: OrderSummary = {
       orderId,
+      userId: chain.intent.payload.userId,
       flowMode: chain.intent.payload.flowMode,
       authorizedAmountCents: chain.cart.payload.totalCents,
       chargedAmountCents: status === 'matched' ? chain.payment.payload.amountCents : existing?.chargedAmountCents ?? null,
@@ -130,17 +145,28 @@ export class AuditStore {
     return JSON.parse(order.mandateChainJson) as MandateChain;
   }
 
-  listOrders(): OrderSummary[] {
-    return Object.values(this.data.orders).sort(
-      (a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime()
-    ).map(({ mandateChainJson: _, ...summary }) => summary);
+  listOrders(userId?: string): OrderSummary[] {
+    let orders = Object.values(this.data.orders);
+    if (userId) {
+      orders = orders.filter((order) => this.resolveUserId(order) === userId);
+    }
+    return orders
+      .sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime())
+      .map(({ mandateChainJson: _, ...summary }) => summary);
+  }
+
+  getOrderForUser(orderId: string, userId: string): OrderSummary | undefined {
+    const order = this.data.orders[orderId];
+    if (!order || this.resolveUserId(order) !== userId) return undefined;
+    const { mandateChainJson: _, ...summary } = order;
+    return summary;
   }
 
   listEvents(limit = 100): AuditRecord[] {
     return this.data.events.slice(0, limit);
   }
 
-  getMismatches(): OrderSummary[] {
-    return this.listOrders().filter((o) => o.status === 'mismatch' || o.status === 'blocked');
+  getMismatches(userId?: string): OrderSummary[] {
+    return this.listOrders(userId).filter((o) => o.status === 'mismatch' || o.status === 'blocked');
   }
 }

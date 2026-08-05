@@ -1,0 +1,578 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+  <meta charset="UTF-8" />
+  <title>Pixelium Consent Commerce — Architecture complète</title>
+  <style>
+    @page { margin: 2cm; }
+    body {
+      font-family: "Segoe UI", Calibri, Arial, sans-serif;
+      font-size: 11pt;
+      line-height: 1.45;
+      color: #1a1a1a;
+      max-width: 900px;
+      margin: 0 auto;
+      padding: 24px;
+    }
+    h1 { font-size: 22pt; color: #0f3460; border-bottom: 3px solid #0f3460; padding-bottom: 8px; margin-top: 0; }
+    h2 { font-size: 15pt; color: #16213e; margin-top: 28px; page-break-after: avoid; }
+    h3 { font-size: 12pt; color: #1a1a2e; margin-top: 18px; page-break-after: avoid; }
+    h4 { font-size: 11pt; color: #333; margin-top: 14px; }
+    p { margin: 8px 0; text-align: justify; }
+    .meta { color: #555; font-size: 10pt; margin-bottom: 24px; }
+    .box {
+      background: #f4f7fb;
+      border-left: 4px solid #0f3460;
+      padding: 12px 16px;
+      margin: 14px 0;
+    }
+    pre, .diagram {
+      background: #f8f9fa;
+      border: 1px solid #ddd;
+      padding: 12px;
+      font-family: Consolas, "Courier New", monospace;
+      font-size: 9pt;
+      line-height: 1.35;
+      overflow-x: auto;
+      white-space: pre-wrap;
+      page-break-inside: avoid;
+    }
+    table {
+      width: 100%;
+      border-collapse: collapse;
+      margin: 12px 0;
+      font-size: 10pt;
+      page-break-inside: avoid;
+    }
+    th, td { border: 1px solid #ccc; padding: 8px; text-align: left; vertical-align: top; }
+    th { background: #0f3460; color: white; }
+    tr:nth-child(even) { background: #f9f9f9; }
+    ul, ol { margin: 8px 0; padding-left: 22px; }
+    li { margin: 4px 0; }
+    .toc { background: #eef2f7; padding: 16px 20px; margin: 20px 0; }
+    .toc ol { margin: 0; }
+    .page-break { page-break-before: always; }
+    .footer-note { font-size: 9pt; color: #666; margin-top: 40px; border-top: 1px solid #ccc; padding-top: 12px; }
+    strong { color: #0f3460; }
+  </style>
+</head>
+<body>
+
+<h1>Pixelium Consent Commerce</h1>
+<p class="meta">
+  <strong>Document d'architecture — Stage Pixelium 2026</strong><br />
+  Projet : Commerce agentique avec consentement utilisateur (A2A + mandats AP2-inspired)<br />
+  Auteur : Stagiaire · Destinataire : Encadrant<br />
+  Date : Juillet 2026
+</p>
+
+<div class="box">
+  <strong>Résumé exécutif :</strong> Nous avons développé un prototype de boutique en ligne où des agents IA peuvent rechercher des produits et effectuer des achats <em>uniquement</em> après validation explicite de l'utilisateur. Chaque transaction suit une chaîne de mandats signés : <strong>Intent → Cart → Payment</strong>. Un broker central valide tout avant qu'un agent de paiement ne débite (simulation). Un assistant RAG (embeddings + vector store + LLM) aide l'utilisateur à choisir quoi acheter.
+</div>
+
+<div class="toc">
+  <strong>Table des matières</strong>
+  <ol>
+    <li>Contexte et objectifs</li>
+    <li>Architecture globale du système</li>
+    <li>Structure du monorepo</li>
+    <li>Chaîne de mandats (consentement)</li>
+    <li>Flux utilisateur (realtime et delegated)</li>
+    <li>Consent Broker (orchestrateur)</li>
+    <li>Dashboard React (interface utilisateur)</li>
+    <li>Architecture RAG (assistant shopping)</li>
+    <li>Agent E-commerce (Product Agent)</li>
+    <li>Agent Paiement (Payment Agent)</li>
+    <li>Relation RAG ↔ Agents</li>
+    <li>Technologies utilisées</li>
+    <li>Sécurité et tests</li>
+    <li>Limites et perspectives</li>
+    <li>Guide de démonstration</li>
+  </ol>
+</div>
+
+<h2>1. Contexte et objectifs</h2>
+
+<h3>1.1 Problématique</h3>
+<p>Les assistants IA peuvent aujourd'hui rechercher des produits, remplir un panier et parfois initier un paiement sans contrôle clair pour l'utilisateur. Notre projet démontre qu'il est possible d'automatiser l'achat tout en conservant le <strong>consentement humain</strong> à chaque étape critique.</p>
+
+<h3>1.2 Objectifs du prototype</h3>
+<ul>
+  <li>Implémenter une chaîne de mandats inspirée du protocole <strong>AP2</strong> (Agent Payments Protocol, Google).</li>
+  <li>Faire communiquer deux agents via le protocole <strong>A2A</strong> (Agent-to-Agent).</li>
+  <li>Centraliser la validation dans un <strong>Consent Broker</strong>.</li>
+  <li>Proposer un assistant IA avec <strong>RAG</strong> pour recommander des produits du catalogue.</li>
+  <li>Journaliser toutes les opérations dans une piste d'<strong>audit</strong>.</li>
+</ul>
+
+<h2>2. Architecture globale du système</h2>
+
+<pre class="diagram">
+┌─────────────────────────────────────────────────────────────────────────┐
+│                         UTILISATEUR (navigateur)                         │
+└─────────────────────────────────┬───────────────────────────────────────┘
+                                  │ HTTP + JWT
+                                  ▼
+┌─────────────────────────────────────────────────────────────────────────┐
+│              DASHBOARD REACT — apps/dashboard (:3000)                    │
+│   Catalogue · Panier · Checkout · Assistant IA · Profil · Audit          │
+└─────────────────────────────────┬───────────────────────────────────────┘
+                                  │ REST API
+                                  ▼
+┌─────────────────────────────────────────────────────────────────────────┐
+│              CONSENT BROKER — apps/broker (:4000)                        │
+│   Auth JWT · Catalog API · Mandats · RAG · Validation · Audit            │
+│   ┌─────────────────────────────────────────────────────────────────┐   │
+│   │  RAG : Chunk → Embed (MiniLM) → Vector Store → Retrieve → Groq  │   │
+│   └─────────────────────────────────────────────────────────────────┘   │
+└───────────────┬─────────────────────────────────────┬───────────────────┘
+                │ POST /invoke (A2A-style)            │ MySQL
+                ▼                                     ▼
+┌───────────────────────────────┐         ┌─────────────────────┐
+│  PRODUCT AGENT (Python)       │         │  MySQL (XAMPP)      │
+│  LangGraph · FastAPI (:4001)  │         │  Users + Catalog    │
+│  search_catalog · build_cart  │         │  ~505 produits      │
+└───────────────────────────────┘         └─────────────────────┘
+                │
+                │ (après validation broker)
+                ▼
+┌───────────────────────────────┐
+│  PAYMENT AGENT (Python)       │
+│  LangGraph · FastAPI (:4002)  │
+│  process_payment (mock charge)│
+└───────────────────────────────┘
+</pre>
+
+<p><strong>Principe clé :</strong> le navigateur ne communique <em>jamais</em> directement avec les agents Python. Tout passe par le broker, seul point de contrôle.</p>
+
+<table>
+  <tr><th>Composant</th><th>Port</th><th>Technologie</th><th>Rôle</th></tr>
+  <tr><td>Dashboard</td><td>3000</td><td>React 19 + Vite</td><td>Interface boutique et consentement</td></tr>
+  <tr><td>Consent Broker</td><td>4000</td><td>Node.js + Express</td><td>Orchestration, RAG, validation, audit</td></tr>
+  <tr><td>Product Agent</td><td>4001</td><td>Python + LangGraph + FastAPI</td><td>Recherche catalogue + Cart Mandate</td></tr>
+  <tr><td>Payment Agent</td><td>4002</td><td>Python + LangGraph + FastAPI</td><td>Preuve mandats + paiement simulé</td></tr>
+  <tr><td>MySQL</td><td>3306</td><td>XAMPP</td><td>Utilisateurs et catalogue produits</td></tr>
+</table>
+
+<div class="page-break"></div>
+
+<h2>3. Structure du monorepo</h2>
+
+<pre class="diagram">
+pixelium-consent-commerce/
+├── apps/
+│   ├── dashboard/          → Interface React (client + serveur Vite)
+│   └── broker/             → API REST, RAG, orchestration agents
+├── packages/
+│   ├── shared/             → Mandats, signatures HMAC, types, recherche
+│   ├── auth/               → Login JWT, utilisateurs MySQL
+│   ├── catalog/            → Store produits MySQL
+│   └── audit/              → Journal des commandes (JSON)
+├── services/
+│   └── agents/             → Agents Python LangGraph
+│       └── pixelium_agents/
+│           ├── product_agent/
+│           ├── payment_agent/
+│           └── servers/
+└── docs/                   → Rapports, specs, ce document
+</pre>
+
+<p>Commande unique pour lancer les 4 services : <code>npm run dev</code></p>
+
+<h2>4. Chaîne de mandats (consentement)</h2>
+
+<p>Inspirée du protocole AP2, chaque achat suit trois mandats signés et liés :</p>
+
+<pre class="diagram">
+  UTILISATEUR                    MARCHAND                 BROKER              AGENT PAIEMENT
+      │                             │                       │                      │
+      │── Intent Mandate ──────────►│                       │                      │
+      │   (signé utilisateur)       │                       │                      │
+      │                             │── Cart Mandate ──────►│                      │
+      │                             │   (signé marchand)    │                      │
+      │── Payment Mandate ──────────┼──────────────────────►│── validate chain ──►│
+      │   (signé utilisateur)       │                       │                      │
+</pre>
+
+<h3>4.1 Structure d'un mandat</h3>
+<pre class="diagram">{
+  "id": "uuid",
+  "type": "intent | cart | payment",
+  "version": "1.0",
+  "createdAt": "ISO-8601",
+  "expiresAt": "ISO-8601",
+  "payload": { ... },
+  "signerId": "user | merchant | ...",
+  "signature": "HMAC-SHA256 hex",
+  "parentMandateId": "lien vers mandat parent"
+}</pre>
+
+<h3>4.2 Signature</h3>
+<p>Algorithme : <strong>HMAC-SHA256</strong> sur la chaîne canonique :</p>
+<pre class="diagram">type | signerId | parentMandateId | JSON payload (clés triées)</pre>
+
+<h3>4.3 Contenu des mandats</h3>
+<table>
+  <tr><th>Mandat</th><th>Signataire</th><th>Contenu principal</th></tr>
+  <tr><td>Intent</td><td>Utilisateur</td><td>Intention NL, budget max, SKUs autorisés, mode (realtime/delegated), expiry</td></tr>
+  <tr><td>Cart</td><td>Marchand</td><td>Items, sous-total, taxe (~8%), total, lien intentMandateId</td></tr>
+  <tr><td>Payment</td><td>Utilisateur</td><td>Montant (= total panier), liens cart + intent</td></tr>
+</table>
+
+<h2>5. Flux utilisateur</h2>
+
+<h3>5.1 Mode Realtime (utilisateur présent)</h3>
+<ol>
+  <li>L'utilisateur ajoute des produits au panier ou utilise l'IA.</li>
+  <li>Checkout → le broker crée un Intent Mandate.</li>
+  <li>Le broker appelle le Product Agent → Cart Mandate.</li>
+  <li>L'UI affiche la revue de consentement (Review &amp; pay).</li>
+  <li>L'utilisateur approuve → Payment Mandate → broker valide → Payment Agent charge (mock).</li>
+</ol>
+
+<h3>5.2 Mode Delegated (utilisateur absent)</h3>
+<ol>
+  <li>L'utilisateur signe à l'avance un Intent Mandate avec conditions (budget, SKUs, dates).</li>
+  <li>Un moniteur background (<code>delegated-monitor.ts</code>) surveille les conditions.</li>
+  <li>Quand les conditions sont remplies, le broker exécute automatiquement cart + payment.</li>
+</ol>
+
+<div class="page-break"></div>
+
+<h2>6. Consent Broker (orchestrateur)</h2>
+
+<p><strong>Fichier principal :</strong> <code>apps/broker/src/server.ts</code> · <code>broker.ts</code></p>
+
+<h3>6.1 Responsabilités</h3>
+<ul>
+  <li>API REST authentifiée (JWT)</li>
+  <li>Exposition du catalogue MySQL</li>
+  <li>Création et validation des mandats</li>
+  <li>Appel des agents Python via <code>POST /invoke</code></li>
+  <li>Pipeline RAG pour l'assistant shopping</li>
+  <li>Journal d'audit (<code>packages/audit</code>)</li>
+</ul>
+
+<h3>6.2 Endpoints principaux</h3>
+<table>
+  <tr><th>Endpoint</th><th>Rôle</th></tr>
+  <tr><td>POST /api/auth/login</td><td>Authentification JWT</td></tr>
+  <tr><td>GET /api/catalog</td><td>Liste produits paginée</td></tr>
+  <tr><td>POST /api/checkout/prepare</td><td>Prépare Intent + Cart mandates</td></tr>
+  <tr><td>POST /api/submit</td><td>Soumet la chaîne complète au Payment Agent</td></tr>
+  <tr><td>POST /api/ai/advise</td><td>Assistant RAG (recommandations)</td></tr>
+  <tr><td>POST /api/ai/prepare</td><td>IA → intent + cart pour checkout</td></tr>
+  <tr><td>GET /api/audit/orders</td><td>Historique commandes</td></tr>
+  <tr><td>GET /health</td><td>État services + index RAG</td></tr>
+</table>
+
+<h2>7. Dashboard React (interface utilisateur)</h2>
+
+<p><strong>Chemin :</strong> <code>apps/dashboard/src/client/</code></p>
+
+<h3>7.1 Fonctionnalités</h3>
+<ul>
+  <li>Parcours catalogue avec catégories et pagination</li>
+  <li>Panier et checkout avec modale de consentement</li>
+  <li>Panel assistant IA (4 actions)</li>
+  <li>Profil utilisateur et historique commandes</li>
+  <li>Dashboard audit (admin)</li>
+</ul>
+
+<h3>7.2 Panel assistant IA</h3>
+<table>
+  <tr><th>Bouton</th><th>Action</th><th>Appelle les agents ?</th></tr>
+  <tr><td>Get advice</td><td>RAG — recommandations</td><td>Non</td></tr>
+  <tr><td>Search catalog</td><td>Recherche mots-clés</td><td>Non</td></tr>
+  <tr><td>Parse intent</td><td>Comprendre l'intention d'achat (Groq)</td><td>Non</td></tr>
+  <tr><td>Search &amp; review</td><td>Prépare checkout avec mandats</td><td>Oui (Product Agent)</td></tr>
+</table>
+
+<div class="page-break"></div>
+
+<h2>8. Architecture RAG (assistant shopping personnel)</h2>
+
+<p>Le RAG vit <strong>dans le broker</strong> (<code>apps/broker/src/rag/</code>). Il aide l'utilisateur à <em>décider</em> quoi acheter, sans créer de mandat ni payer.</p>
+
+<h3>8.1 Pipeline d'indexation (au démarrage du broker)</h3>
+<pre class="diagram">
+  MySQL Catalog (505 produits)
+           │
+           ▼
+      CHUNKER (chunker.ts)
+      1 produit = 1 chunk texte
+      (nom, catégorie, SKU, prix, description)
+           │
+           ▼
+   EMBEDDING MODEL (embeddings.ts)
+   Xenova/all-MiniLM-L6-v2
+   Vectorisation → vecteurs 384D normalisés
+           │
+           ▼
+   VECTOR STORE (vector-store.ts)
+   505 nœuds en mémoire
+   Recherche par similarité cosinus
+</pre>
+
+<h3>8.2 Pipeline de requête (runtime)</h3>
+<pre class="diagram">
+  Question utilisateur
+           │
+           ▼
+   QUERY EXPAND (query-expand.ts)
+   Ex: "aide sommeil" → + pillow, plush, comfort...
+           │
+           ▼
+   Embed query → Vector search → Top-K chunks
+           │
+           ▼
+   RERANK (rerank.ts)
+   Filtre faux positifs (ex: train "Sleeping Car")
+           │
+           ▼
+   AUGMENT + GENERATE (advisor.ts + groq-chat.ts)
+   Contexte récupéré + question → Groq LLM
+           │
+           ▼
+   Réponse : conseils + 1-3 picks (SKU, raison, prix)
+</pre>
+
+<h3>8.3 Modules RAG</h3>
+<table>
+  <tr><th>Fichier</th><th>Rôle dans l'architecture RAG standard</th></tr>
+  <tr><td>chunker.ts</td><td>Chunking (documents → segments)</td></tr>
+  <tr><td>embeddings.ts</td><td>Embedding model (vectorisation)</td></tr>
+  <tr><td>vector-store.ts</td><td>Vector store (index + recherche)</td></tr>
+  <tr><td>indexer.ts</td><td>Pipeline d'indexation complet</td></tr>
+  <tr><td>retriever.ts</td><td>Retrieve (query → embed → search)</td></tr>
+  <tr><td>query-expand.ts</td><td>Enrichissement sémantique de la requête</td></tr>
+  <tr><td>rerank.ts</td><td>Re-classement intent-aware</td></tr>
+  <tr><td>advisor.ts</td><td>Augment + Generate (prompt + LLM)</td></tr>
+  <tr><td>groq-chat.ts</td><td>Client Groq résilient (SDK + fetch fallback)</td></tr>
+</table>
+
+<div class="page-break"></div>
+
+<h2>9. Agent E-commerce (Product Agent — :4001)</h2>
+
+<p><strong>Technologie :</strong> Python · FastAPI · LangGraph<br />
+<strong>Chemin :</strong> <code>services/agents/pixelium_agents/product_agent/</code></p>
+
+<h3>9.1 Graph LangGraph</h3>
+<pre class="diagram">
+                    START
+                      │
+                      ▼
+                   ROUTER
+                   /     \
+          action=search   action=build_cart
+                /              \
+               ▼                ▼
+      PARALLEL SEARCH      CART BUILDER
+      ┌─────────────┐      ┌──────────────────┐
+      │ sub_search  │      │ Resolve products │
+      │ sub_filter  │      │ Check stock      │
+      │ sub_rank    │      │ Compute tax 8%   │
+      └─────────────┘      │ Sign Cart Mandate│
+               │           └──────────────────┘
+               ▼                │
+              END               END
+</pre>
+
+<h3>9.2 Compétences (skills A2A)</h3>
+<table>
+  <tr><th>Skill</th><th>Action</th><th>Entrée</th><th>Sortie</th></tr>
+  <tr><td>search_catalog</td><td>search</td><td>query</td><td>products[], rankedSku</td></tr>
+  <tr><td>build_cart</td><td>build_cart</td><td>intentMandate + items[]</td><td>cartMandate signé</td></tr>
+</table>
+
+<h3>9.3 Sous-agents parallèles (search)</h3>
+<ul>
+  <li><strong>sub_search</strong> — recherche mots-clés dans le catalogue</li>
+  <li><strong>sub_filter</strong> — garde uniquement les produits en stock</li>
+  <li><strong>sub_rank</strong> — score heuristique (nom, catégorie)</li>
+</ul>
+
+<h3>9.4 Cart Builder</h3>
+<p>Valide les SKUs, calcule sous-total + taxe, crée un Cart Mandate signé HMAC par le marchand (<code>signerId: merchant</code>), lié au Intent Mandate parent.</p>
+
+<h2>10. Agent Paiement (Payment Agent — :4002)</h2>
+
+<p><strong>Technologie :</strong> Python · FastAPI · LangGraph<br />
+<strong>Chemin :</strong> <code>services/agents/pixelium_agents/payment_agent/</code></p>
+
+<h3>10.1 Graph LangGraph</h3>
+<pre class="diagram">
+                    START
+                      │
+                      ▼
+              PARALLEL PROOF (4 threads)
+              ┌────────────────────────────┐
+              │ sub_verify_signatures      │
+              │ sub_verify_chain_links       │
+              │ sub_verify_amount            │
+              │ sub_replay_guard             │
+              └────────────────────────────┘
+                      │
+              proof_passed ?
+               /            \
+             oui             non
+              │               │
+              ▼               │
+        CHARGE EXECUTOR       │
+        (mock payment)        │
+              │               │
+              └───────┬───────┘
+                      ▼
+                  EXPLAINER
+                  (message lisible)
+                      │
+                     END
+</pre>
+
+<h3>10.2 Vérifications de sécurité (100% déterministes)</h3>
+<table>
+  <tr><th>Vérification</th><th>Bloque si…</th></tr>
+  <tr><td>Signatures HMAC</td><td>Signature invalide ou mandat expiré</td></tr>
+  <tr><td>Chaîne parent-enfant</td><td>Liens intent/cart/payment incohérents</td></tr>
+  <tr><td>Montants</td><td>Paiement ≠ total panier, dépassement budget, SKU non autorisé</td></tr>
+  <tr><td>Replay guard</td><td>Même paymentId déjà traité</td></tr>
+</table>
+
+<h3>10.3 Charge simulée</h3>
+<p>Si toutes les preuves passent, génère un <code>transactionId</code> mock (ex: <code>txn_a1b2c3d4</code>). Aucun vrai paiement bancaire.</p>
+
+<div class="page-break"></div>
+
+<h2>11. Relation RAG ↔ Agents</h2>
+
+<pre class="diagram">
+  PHASE 1 — DÉCISION (optionnelle)          PHASE 2 — EXÉCUTION (achat)
+  ───────────────────────────────          ─────────────────────────────
+
+  Utilisateur                              Utilisateur approuve
+       │                                        │
+       ▼                                        ▼
+  POST /api/ai/advise                      POST /api/checkout/prepare
+       │                                        │
+       ▼                                        ▼
+  RAG (broker)                             Broker crée Intent Mandate
+  embed → vector search → Groq                   │
+       │                                        ▼
+       ▼                                   Product Agent :4001
+  Conseils + picks                               build_cart
+  (pas de mandat)                                │
+       │                                        ▼
+       ▼                                   Cart Mandate
+  Add to cart ─────────────────────────►  Payment Mandate
+                                                 │
+                                                 ▼
+                                            Payment Agent :4002
+                                            process_payment
+</pre>
+
+<table>
+  <tr><th></th><th>RAG</th><th>Product Agent</th><th>Payment Agent</th></tr>
+  <tr><td>Langage</td><td>TypeScript (broker)</td><td>Python</td><td>Python</td></tr>
+  <tr><td>But</td><td>Recommander</td><td>Construire panier officiel</td><td>Valider et payer</td></tr>
+  <tr><td>LLM</td><td>Groq (conseils)</td><td>Non (heuristique rank)</td><td>Non (explainer template)</td></tr>
+  <tr><td>Consentement</td><td>Non</td><td>Oui (Cart Mandate)</td><td>Oui (Payment Mandate)</td></tr>
+  <tr><td>Communication</td><td>Interne broker</td><td>POST /invoke :4001</td><td>POST /invoke :4002</td></tr>
+</table>
+
+<p><strong>Le RAG ne parle jamais directement aux agents.</strong> Le broker fait le lien entre découverte (RAG) et exécution (agents).</p>
+
+<h2>12. Technologies utilisées</h2>
+<table>
+  <tr><th>Couche</th><th>Technologies</th></tr>
+  <tr><td>Frontend</td><td>React 19, TypeScript, Vite, CSS custom</td></tr>
+  <tr><td>API / Orchestration</td><td>Node.js 22, Express 5, TypeScript</td></tr>
+  <tr><td>Agents</td><td>Python 3.14, FastAPI, LangGraph, Pydantic</td></tr>
+  <tr><td>Base de données</td><td>MySQL (XAMPP) — users + catalog</td></tr>
+  <tr><td>IA / RAG</td><td>Groq (Llama 3.3), @xenova/transformers (MiniLM-L6-v2)</td></tr>
+  <tr><td>Auth</td><td>JWT + bcrypt</td></tr>
+  <tr><td>Protocoles</td><td>A2A (Agent Cards, /invoke), AP2-inspired mandates</td></tr>
+  <tr><td>Audit</td><td>JSON file store (packages/audit)</td></tr>
+</table>
+
+<h2>13. Sécurité et tests</h2>
+
+<h3>13.1 Mécanismes de protection</h3>
+<ul>
+  <li>Signatures HMAC sur chaque mandat</li>
+  <li>Validation de chaîne par le broker avant envoi au Payment Agent</li>
+  <li>Plafond de budget (<code>maxPriceCents</code>) dans Intent Mandate</li>
+  <li>Liste blanche SKU optionnelle (mode delegated)</li>
+  <li>Expiration temporelle des mandats</li>
+  <li>Protection replay (double paiement bloqué)</li>
+  <li>Authentification JWT sur toutes les routes sensibles</li>
+</ul>
+
+<h3>13.2 Tests</h3>
+<table>
+  <tr><th>Suite</th><th>Commande</th><th>Couverture</th></tr>
+  <tr><td>Agents Python</td><td>npm run test:agents</td><td>20 tests unitaires LangGraph</td></tr>
+  <tr><td>Adversariaux</td><td>npm run test:adversarial</td><td>Sig forgée, montant modifié, budget, replay</td></tr>
+  <tr><td>Démos E2E</td><td>npm run demo:realtime / delegated / ai</td><td>Flux complets automatisés</td></tr>
+  <tr><td>Vérification</td><td>npm run verify</td><td>Build + demos + tests</td></tr>
+</table>
+
+<h2>14. Limites et perspectives</h2>
+<table>
+  <tr><th>Limite actuelle</th><th>Perspective production</th></tr>
+  <tr><td>Paiements simulés</td><td>Intégrer Stripe / PayPal réel</td></tr>
+  <tr><td>Clés HMAC de démo</td><td>ECDSA + clés device-bound</td></tr>
+  <tr><td>Mandats simplifiés</td><td>W3C Verifiable Credentials (AP2 complet)</td></tr>
+  <tr><td>Vector store en RAM</td><td>Pinecone, Milvus, ou pgvector</td></tr>
+  <tr><td>Jobs delegated en mémoire</td><td>Persistance Redis / DB</td></tr>
+  <tr><td>Catalogue jouets/hobbies</td><td>Catalogue métier réel</td></tr>
+</table>
+
+<div class="page-break"></div>
+
+<h2>15. Guide de démonstration</h2>
+
+<h3>15.1 Démarrage</h3>
+<pre class="diagram">cd pixelium-consent-commerce
+npm install
+pip install -r services/agents/requirements.txt
+npm run dev</pre>
+
+<h3>15.2 URLs</h3>
+<table>
+  <tr><th>URL</th><th>Description</th></tr>
+  <tr><td>http://localhost:3000</td><td>Boutique (UI principale)</td></tr>
+  <tr><td>http://localhost:4000/health</td><td>État broker + RAG index</td></tr>
+  <tr><td>http://localhost:4001</td><td>Product Agent (API only)</td></tr>
+  <tr><td>http://localhost:4002</td><td>Payment Agent (API only)</td></tr>
+</table>
+
+<h3>15.3 Compte démo</h3>
+<p>Email : <code>demo@pixelium.com</code> · Mot de passe : <code>demo123</code></p>
+
+<h3>15.4 Scénarios à montrer à l'encadrant</h3>
+<ol>
+  <li><strong>Parcours classique :</strong> parcourir le catalogue → ajouter au panier → checkout → approuver le mandat → paiement simulé.</li>
+  <li><strong>Assistant RAG :</strong> « What should I get as a gift under $30 for a kid who likes trains? » → Get advice → voir recommandations vectorielles.</li>
+  <li><strong>Achat par IA :</strong> « Buy noise-canceling headphones under $400 » → Search &amp; review → modale consentement.</li>
+  <li><strong>Audit :</strong> consulter l'historique des commandes et la chaîne de mandats.</li>
+  <li><strong>Sécurité :</strong> <code>npm run test:adversarial</code> — démontrer le blocage des attaques.</li>
+</ol>
+
+<h3>15.5 Messages clés pour la soutenance</h3>
+<div class="box">
+  <ol>
+    <li><em>« Le broker est le seul point de contrôle — aucun paiement sans mandat valide. »</em></li>
+    <li><em>« L'utilisateur garde le dernier mot : même l'IA ne paie qu'après revue et approbation. »</em></li>
+    <li><em>« Le RAG ne peut pas inventer de produits — il ne recommande que le catalogue indexé. »</em></li>
+    <li><em>« Les agents Python exécutent ; le broker orchestre ; React présente le consentement. »</em></li>
+  </ol>
+</div>
+
+<p class="footer-note">
+  Document généré pour le projet Pixelium Consent Commerce — Stage 2026.<br />
+  Repository : pixelium-consent-commerce · Docs complémentaires : docs/FINAL_REPORT.md, docs/MANDATE_FORMAT.md, docs/SECURITY_FINDINGS.md
+</p>
+
+</body>
+</html>

@@ -6,6 +6,19 @@ export interface Product {
   description: string;
   refundable: boolean;
   inStock: number;
+  /** Product photo URL (Unsplash or stored in MySQL). */
+  imageUrl?: string;
+}
+
+let activeCatalog: Product[] | null = null;
+
+/** Replace in-memory catalog (called after MySQL load). */
+export function setActiveCatalog(products: Product[]): void {
+  activeCatalog = products.length > 0 ? products : null;
+}
+
+function getCatalog(): Product[] {
+  return activeCatalog ?? MOCK_CATALOG;
 }
 
 export const MOCK_CATALOG: Product[] = [
@@ -14,7 +27,8 @@ export const MOCK_CATALOG: Product[] = [
     name: 'Classic Red High-Top Sneakers',
     category: 'footwear',
     priceCents: 12999,
-    description: 'Old-school red basketball shoes, high top.',
+    description:
+      'Bold red high-top sneakers with padded collar and grippy rubber sole. Lightweight for running, training, and everyday wear. Classic court-shoe look that pairs with jeans or joggers.',
     refundable: true,
     inStock: 12,
   },
@@ -23,7 +37,8 @@ export const MOCK_CATALOG: Product[] = [
     name: 'Waterproof Trail Jacket (Green, M)',
     category: 'outerwear',
     priceCents: 18999,
-    description: 'Lightweight waterproof jacket for hiking.',
+    description:
+      'Forest-green waterproof trail jacket, size M. Seam-sealed hood, breathable lining, and packable fit for hiking, commuting, and winter weather. Wind-resistant shell keeps you dry in rain and snow.',
     refundable: true,
     inStock: 5,
   },
@@ -32,7 +47,8 @@ export const MOCK_CATALOG: Product[] = [
     name: 'PixelPhone 17 Pro (256GB)',
     category: 'electronics',
     priceCents: 169999,
-    description: 'Latest flagship smartphone with AI assistant.',
+    description:
+      'Flagship PixelPhone 17 Pro with 256 GB storage, 6.7" OLED display, and built-in AI assistant. Triple-camera system with night mode, all-day battery, and 5G. One-year warranty included.',
     refundable: false,
     inStock: 20,
   },
@@ -41,7 +57,8 @@ export const MOCK_CATALOG: Product[] = [
     name: 'Noise-Canceling Headphones',
     category: 'electronics',
     priceCents: 34999,
-    description: 'Over-ear ANC headphones, 40h battery.',
+    description:
+      'Over-ear active noise-canceling headphones with 40-hour battery, Bluetooth 5.3, and a fold-flat travel case. Adaptive ANC for flights and focus work, with memory-foam ear cushions.',
     refundable: true,
     inStock: 30,
   },
@@ -50,7 +67,8 @@ export const MOCK_CATALOG: Product[] = [
     name: 'Building Agentic Systems',
     category: 'books',
     priceCents: 4599,
-    description: 'Practical guide to multi-agent architectures.',
+    description:
+      'Practical guide to multi-agent architectures, tool use, RAG pipelines, and consent-aware commerce. Covers orchestration patterns and production deployment. Paperback, 320 pages.',
     refundable: true,
     inStock: 100,
   },
@@ -61,6 +79,8 @@ const STOP_WORDS = new Set([
   'please', 'some', 'my', 'and', 'or', 'to', 'in', 'on', 'at', 'is', 'it',
   'dollars', 'dollar', 'usd', 'from', 'selected', 'item', 'approval', 'test',
   'check', 'site',
+  'who', 'are', 'you', 'what', 'how', 'why', 'when', 'where', 'can', 'does',
+  'hello', 'hi', 'hey', 'thanks', 'thank', 'help',
 ]);
 
 const COLOR_WORDS = new Set(['red', 'green', 'blue', 'black', 'white', 'grey', 'gray']);
@@ -80,7 +100,7 @@ export function matchProductFromMessage(query: string): Product | null {
   if (tokens.length === 0) return null;
 
   type Scored = { product: Product; matched: string[]; score: number };
-  const ranked: Scored[] = MOCK_CATALOG.map((p) => {
+  const ranked: Scored[] = getCatalog().map((p) => {
     const name = p.name.toLowerCase();
     const haystack = `${name} ${p.category} ${p.sku} ${p.description}`.toLowerCase();
     const matched: string[] = [];
@@ -120,9 +140,9 @@ export function searchProducts(query: string): Product[] {
   const matched = matchProductFromMessage(query);
   if (matched) return [matched];
   const tokens = tokenizeQuery(query);
-  if (tokens.length === 0) return MOCK_CATALOG;
+  if (tokens.length === 0) return [];
 
-  const scored = MOCK_CATALOG.map((p) => {
+  const scored = getCatalog().map((p) => {
     const haystack = `${p.name} ${p.category} ${p.sku} ${p.description}`.toLowerCase();
     let score = 0;
     for (const token of tokens) {
@@ -139,7 +159,7 @@ export function searchProducts(query: string): Product[] {
 }
 
 export function getProduct(sku: string): Product | undefined {
-  return MOCK_CATALOG.find((p) => p.sku === sku);
+  return getCatalog().find((p) => p.sku === sku);
 }
 
 export function computeTax(subtotalCents: number): number {

@@ -1,0 +1,121 @@
+name: pixelium
+
+services:
+  mysql:
+    image: mysql:8.0
+    restart: unless-stopped
+    environment:
+      MYSQL_ROOT_PASSWORD: ${MYSQL_ROOT_PASSWORD:?Set MYSQL_ROOT_PASSWORD in .env}
+      MYSQL_DATABASE: ${MYSQL_DATABASE:-pixelium_consent}
+      MYSQL_USER: ${MYSQL_USER:-pixelium}
+      MYSQL_PASSWORD: ${MYSQL_PASSWORD:?Set MYSQL_PASSWORD in .env}
+    volumes:
+      - mysql_data:/var/lib/mysql
+    healthcheck:
+      test: ['CMD', 'mysqladmin', 'ping', '-h', '127.0.0.1', '-u', 'root', '-p${MYSQL_ROOT_PASSWORD}']
+      interval: 5s
+      timeout: 5s
+      retries: 30
+      start_period: 20s
+
+  broker:
+    build:
+      context: .
+      dockerfile: docker/node.Dockerfile
+      target: broker
+    restart: unless-stopped
+    environment:
+      NODE_ENV: production
+      BROKER_PORT: 4000
+      MYSQL_HOST: mysql
+      MYSQL_PORT: 3306
+      MYSQL_USER: ${MYSQL_USER:-pixelium}
+      MYSQL_PASSWORD: ${MYSQL_PASSWORD}
+      MYSQL_DATABASE: ${MYSQL_DATABASE:-pixelium_consent}
+      JWT_SECRET: ${JWT_SECRET:?Set JWT_SECRET in .env}
+      GROQ_API_KEY: ${GROQ_API_KEY:-}
+      GROQ_MODEL: ${GROQ_MODEL:-llama-3.3-70b-versatile}
+      GROQ_WHISPER_MODEL: ${GROQ_WHISPER_MODEL:-whisper-large-v3-turbo}
+      ECOMMERCE_URL: http://product-agent:4001
+      PAYMENT_URL: http://payment-agent:4002
+      AUDIT_DB_PATH: /data/audit.json
+    volumes:
+      - broker_data:/data
+    depends_on:
+      mysql:
+        condition: service_healthy
+      product-agent:
+        condition: service_healthy
+      payment-agent:
+        condition: service_healthy
+
+  product-agent:
+    build:
+      context: .
+      dockerfile: docker/agents.Dockerfile
+    restart: unless-stopped
+    command: ['python', 'run_product_agent.py']
+    environment:
+      ECOMMERCE_PORT: 4001
+      MYSQL_HOST: mysql
+      MYSQL_PORT: 3306
+      MYSQL_USER: ${MYSQL_USER:-pixelium}
+      MYSQL_PASSWORD: ${MYSQL_PASSWORD}
+      MYSQL_DATABASE: ${MYSQL_DATABASE:-pixelium_consent}
+    depends_on:
+      mysql:
+        condition: service_healthy
+    healthcheck:
+      test: ['CMD', 'python', '-c', "import urllib.request; urllib.request.urlopen('http://127.0.0.1:4001/health')"]
+      interval: 10s
+      timeout: 5s
+      retries: 12
+      start_period: 15s
+
+  payment-agent:
+    build:
+      context: .
+      dockerfile: docker/agents.Dockerfile
+    restart: unless-stopped
+    command: ['python', 'run_payment_agent.py']
+    environment:
+      PAYMENT_PORT: 4002
+    healthcheck:
+      test: ['CMD', 'python', '-c', "import urllib.request; urllib.request.urlopen('http://127.0.0.1:4002/health')"]
+      interval: 10s
+      timeout: 5s
+      retries: 12
+      start_period: 10s
+
+  dashboard:
+    build:
+      context: .
+      dockerfile: docker/node.Dockerfile
+      target: dashboard
+    restart: unless-stopped
+    environment:
+      NODE_ENV: production
+      DASHBOARD_PORT: 3000
+      BROKER_URL: ${BROKER_URL:-/broker}
+    depends_on:
+      broker:
+        condition: service_healthy
+
+  nginx:
+    image: nginx:1.27-alpine
+    restart: unless-stopped
+    ports:
+      - '80:80'
+      - '443:443'
+    volumes:
+      - ./docker/nginx.conf:/etc/nginx/conf.d/default.conf:ro
+      - /etc/letsencrypt:/etc/letsencrypt:ro
+    depends_on:
+      dashboard:
+        condition: service_healthy
+      broker:
+        condition: service_healthy
+
+volumes:
+  mysql_data:
+  broker_data:

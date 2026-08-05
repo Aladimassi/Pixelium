@@ -9,6 +9,10 @@
     ".": {
       "types": "./dist/index.d.ts",
       "import": "./dist/index.js"
+    },
+    "./product-images": {
+      "types": "./dist/product-images.d.ts",
+      "import": "./dist/product-images.js"
     }
   },
   "scripts": {

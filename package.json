@@ -4,22 +4,35 @@
   "private": true,
   "description": "Consent-aware agent commerce prototype (A2A + AP2-inspired mandates)",
   "workspaces": [
-    "packages/*"
+    "apps/*",
+    "packages/shared",
+    "packages/audit",
+    "packages/auth",
+    "packages/catalog"
   ],
   "scripts": {
     "build": "npm run build -w @pixelium/shared && npm run build -w @pixelium/audit && npm run build --workspaces --if-present",
-    "dev:ecommerce": "npm run dev -w @pixelium/ecommerce-agent",
-    "dev:payment": "npm run dev -w @pixelium/payment-agent",
+    "agents:install": "pip install -r services/agents/requirements.txt",
+    "dev:product": "python services/agents/run_product_agent.py",
+    "dev:payment": "python services/agents/run_payment_agent.py",
     "dev:broker": "npm run dev -w @pixelium/consent-broker",
     "dev:dashboard": "npm run dev -w @pixelium/dashboard",
-    "dev": "concurrently -n ecommerce,payment,broker,dashboard -c blue,green,yellow,magenta \"npm run dev:ecommerce\" \"npm run dev:payment\" \"npm run dev:broker\" \"npm run dev:dashboard\"",
+    "dev": "concurrently -n product,payment,broker,dashboard -c blue,green,yellow,magenta \"npm run dev:product\" \"npm run dev:payment\" \"npm run dev:broker\" \"npm run dev:dashboard\"",
+    "test:agents": "python -m pytest services/agents/tests/ -q",
     "demo:realtime": "npm run demo:realtime -w @pixelium/consent-broker",
     "demo:delegated": "npm run demo:delegated -w @pixelium/consent-broker",
     "demo:monitor": "npm run demo:monitor -w @pixelium/consent-broker",
     "demo:ai": "npm run demo:ai -w @pixelium/consent-broker",
     "test:adversarial": "npm run test:adversarial -w @pixelium/consent-broker",
+    "test:guardrails": "npm run test:guardrails -w @pixelium/consent-broker",
     "verify": "powershell -ExecutionPolicy Bypass -File scripts/verify.ps1",
-    "complete": "powershell -ExecutionPolicy Bypass -File scripts/complete.ps1"
+    "complete": "powershell -ExecutionPolicy Bypass -File scripts/complete.ps1",
+    "deploy": "powershell -ExecutionPolicy Bypass -File scripts/deploy.ps1",
+    "expose": "powershell -ExecutionPolicy Bypass -File scripts/expose-internet.ps1",
+    "expose:lt": "powershell -ExecutionPolicy Bypass -File scripts/expose-localtunnel.ps1",
+    "docker:up": "docker compose up -d --build",
+    "docker:down": "docker compose down",
+    "docker:logs": "docker compose logs -f"
   },
   "devDependencies": {
     "concurrently": "^9.1.2",
