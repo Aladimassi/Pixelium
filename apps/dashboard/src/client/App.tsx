@@ -845,7 +845,7 @@ export function App() {
         output={adminOutput}
         events={adminEvents}
         onClose={() => setAdminOpen(false)}
-        onDemoRealtime={async () => {
+        onRunRealtime={async () => {
           setAdminOutput('Running…');
           const { ok, data } = await api(brokerUrl, '/api/demo/realtime', {
             method: 'POST',
@@ -857,7 +857,7 @@ export function App() {
           });
           setAdminOutput(JSON.stringify(data, null, 2) + (ok ? '' : '\n\n(blocked)'));
         }}
-        onDemoDelegated={async () => {
+        onRunDelegated={async () => {
           setAdminOutput('Running…');
           const { ok, data } = await api(brokerUrl, '/api/demo/delegated', {
             method: 'POST',

@@ -225,7 +225,7 @@ export function AuthScreen({ onLogin, onRegister }: AuthScreenProps) {
           </div>
 
           <p className="auth-footer">
-            Protected checkout · Mandate chain validation · Demo store
+            Protected checkout · Mandate chain validation · Secure store
           </p>
         </div>
       </div>

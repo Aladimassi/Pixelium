@@ -11,11 +11,11 @@ interface AdminModalProps {
   output: string;
   events: AuditEvent[];
   onClose: () => void;
-  onDemoRealtime: () => void;
-  onDemoDelegated: () => void;
+  onRunRealtime: () => void;
+  onRunDelegated: () => void;
 }
 
-export function AdminModal({ open, output, events, onClose, onDemoRealtime, onDemoDelegated }: AdminModalProps) {
+export function AdminModal({ open, output, events, onClose, onRunRealtime, onRunDelegated }: AdminModalProps) {
   const dialogRef = useDialog(open);
 
   return (
@@ -25,11 +25,11 @@ export function AdminModal({ open, output, events, onClose, onDemoRealtime, onDe
       </button>
       <h2>Audit Console</h2>
       <div className="admin-actions button-row">
-        <button type="button" id="btn-demo-realtime" className="btn-secondary" onClick={onDemoRealtime}>
-          Demo Real-Time
+        <button type="button" id="btn-run-realtime" className="btn-secondary" onClick={onRunRealtime}>
+          Real-time flow
         </button>
-        <button type="button" id="btn-demo-delegated" className="btn-secondary" onClick={onDemoDelegated}>
-          Demo Delegated
+        <button type="button" id="btn-run-delegated" className="btn-secondary" onClick={onRunDelegated}>
+          Delegated flow
         </button>
       </div>
       <pre id="admin-output" className="output">

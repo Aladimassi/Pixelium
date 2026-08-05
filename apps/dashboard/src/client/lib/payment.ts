@@ -17,10 +17,10 @@ export const DEMO_CARD: SavedCard = {
   brand: 'mastercard',
   icon: '◆',
   label: 'Mastercard',
-  nameOnCard: 'Demo User',
+  nameOnCard: 'Pixulium Member',
   last4: '4242',
   exp: '12/28',
-  nickname: 'Demo card',
+  nickname: 'Primary card',
   style: 'default',
   accent: 'orange',
 };
