@@ -1,199 +1,309 @@
+<div align="center">
+
 # Pixelium Consent Commerce
 
-**Pixelium Internship Program 2026** — Prototype de commerce agentique avec consentement utilisateur.
+**Commerce agentique avec consentement humain — Stage Pixelium 2026**
 
-Boutique en ligne où des agents IA (LangGraph) recherchent des produits et préparent des achats **uniquement après validation explicite** de l'utilisateur. Un **consent broker** central applique une chaîne de mandats signés inspirée d'AP2 : **Intent → Cart → Payment**. Assistant shopping conversationnel (RAG + Groq), panier et paiement isolés par utilisateur, déploiement Docker sur Azure.
+[![Live Demo](https://img.shields.io/badge/D%C3%A9mo-en%20ligne-0f3460?style=for-the-badge&logo=googlechrome&logoColor=white)](https://pixelium.duckdns.org)
+[![GitHub](https://img.shields.io/badge/GitHub-Pixeliumstg-16213e?style=for-the-badge&logo=github&logoColor=white)](https://github.com/Aladimassi/Pixeliumstg)
+[![Architecture PDF](https://img.shields.io/badge/Doc-Encadrant%20(PDF)-e94560?style=for-the-badge&logo=adobeacrobatreader&logoColor=white)](https://github.com/Aladimassi/Pixeliumstg/blob/main/docs/ARCHITECTURE_ENCADRANT.pdf)
+
+*Des agents IA qui achètent pour vous — seulement quand vous le décidez.*
+
+[Essayer la démo](https://pixelium.duckdns.org) · [Documentation encadrant](#-pour-lencadrant) · [Démarrage rapide](#-démarrage-rapide)
+
+</div>
+
+---
+
+## En bref
+
+**Pixelium Consent Commerce** est une boutique en ligne intelligente où des **agents IA autonomes** (LangGraph) recherchent des produits, construisent un panier et préparent un paiement — **uniquement après validation explicite** de l'utilisateur.
+
+Chaque achat suit une **chaîne de mandats signés** inspirée du protocole **AP2** (Agent Payments Protocol) :
+
+```
+Intent Mandate  →  Cart Mandate  →  Payment Mandate  →  Paiement simulé
+   (intention)       (panier)          (consentement)
+```
+
+Un **Consent Broker** central valide, signe et journalise chaque étape. Les agents ne parlent jamais directement au navigateur : le broker est le seul point de contrôle.
 
 | | |
-|---|---|
-| **Démo en ligne** | https://pixelium.duckdns.org |
+|:--|:--|
+| **Démo en production** | [https://pixelium.duckdns.org](https://pixelium.duckdns.org) |
 | **Compte démo** | `demo@pixelium.com` / `demo123` |
-| **Dépôt GitHub** | https://github.com/Aladimassi/Pixeliumstg |
+| **Carte démo** | `4242 4242 4242 4242` (simulation) |
+| **Dépôt** | [github.com/Aladimassi/Pixeliumstg](https://github.com/Aladimassi/Pixeliumstg) |
+
+---
 
 ## Pour l'encadrant
 
-Document d'architecture complet (contexte, schémas, flux mandats, RAG, sécurité, déploiement) :
+> **Document principal** — architecture complète, flux mandats, RAG, sécurité, déploiement Azure et guide de démonstration (~15 sections).
 
-| Format | Lien |
-|--------|------|
-| **PDF (recommandé)** | [docs/ARCHITECTURE_ENCADRANT.pdf](./docs/ARCHITECTURE_ENCADRANT.pdf) |
-| **HTML** | [docs/ARCHITECTURE_ENCADRANT.html](./docs/ARCHITECTURE_ENCADRANT.html) |
+| Format | Lien direct |
+|--------|-------------|
+| **PDF (recommandé)** | [📄 ARCHITECTURE_ENCADRANT.pdf](./docs/ARCHITECTURE_ENCADRANT.pdf) |
+| **HTML** | [🌐 ARCHITECTURE_ENCADRANT.html](./docs/ARCHITECTURE_ENCADRANT.html) |
+| **Sur GitHub** | [Voir le PDF en ligne](https://github.com/Aladimassi/Pixeliumstg/blob/main/docs/ARCHITECTURE_ENCADRANT.pdf) |
 
-Sur GitHub : [Architecture encadrant (PDF)](https://github.com/Aladimassi/Pixeliumstg/blob/main/docs/ARCHITECTURE_ENCADRANT.pdf) · [Architecture encadrant (HTML)](https://github.com/Aladimassi/Pixeliumstg/blob/main/docs/ARCHITECTURE_ENCADRANT.html)
+**Autres livrables du stage**
 
-Autres livrables : [rapport final](./docs/FINAL_REPORT.md) · [format des mandats](./docs/MANDATE_FORMAT.md) · [sécurité](./docs/SECURITY_FINDINGS.md) · [script de démo](./docs/DEMO_SCRIPT.md)
+| Document | Description |
+|----------|-------------|
+| [Rapport final](./docs/FINAL_REPORT.md) | Synthèse du projet et résultats |
+| [Format des mandats](./docs/MANDATE_FORMAT.md) | Spécification Intent / Cart / Payment |
+| [Sécurité](./docs/SECURITY_FINDINGS.md) | Tests adversariaux et findings |
+| [Usabilité](./docs/USABILITY.md) | Étude utilisateur |
+| [Script de démo](./docs/DEMO_SCRIPT.md) | Scénario pas-à-pas pour la soutenance |
+| [Déploiement](./docs/DEPLOY.md) | Docker, HTTPS, VPS / Azure |
 
-## Fonctionnalités principales
+**Scénario de démo suggéré (5 min)**
 
-- **Chat shopping multi-tours** — l'utilisateur discute avec l'assistant IA ; recommandations vs achat automatique sont distinguées (« que me recommandes-tu ? » vs « achète-moi les chaussures »).
-- **Chaîne de consentement** — chaque étape (intention, panier, paiement) passe par des mandats signés HMAC validés par le broker avant tout débit.
-- **Agents A2A** — agent produit (LangGraph, port 4001) et agent paiement (port 4002) orchestrés par le broker (port 4000), jamais en contact direct avec le client.
-- **RAG catalogue** — embeddings, vector store, reranking et expansion de requêtes (ex. running → chaussures).
-- **Guardrails** — politiques entrée/sortie sur les requêtes IA et les actions broker.
-- **Auth JWT + MySQL** — comptes utilisateurs, commandes filtrées par utilisateur, panier et carte bancaire en localStorage par session.
-- **Déploiement production** — Docker Compose (nginx HTTPS, broker Node, dashboard React, agents Python, MySQL).
+1. Ouvrir [pixelium.duckdns.org](https://pixelium.duckdns.org) → connexion `demo@pixelium.com`
+2. Chat : *« Que me recommandes-tu pour courir en hiver ? »* → l'IA propose des produits **sans** ouvrir le checkout
+3. Chat : *« Achète-moi les chaussures de running »* → checkout s'ouvre → l'utilisateur **approuve** le paiement
+4. Admin → voir la piste d'audit de la transaction
 
-## Stack technique
+---
 
-| Couche | Technologies |
-|--------|----------------|
-| Frontend | React, Vite, TypeScript |
-| API / orchestration | Node.js, Express, TypeScript |
-| Agents | Python, LangGraph, FastAPI |
-| IA | Groq (LLM + intent), embeddings locaux, RAG |
-| Données | MySQL (auth, catalogue, audit) |
-| Infra | Docker, nginx, Azure VM |
+## Ce qui rend ce projet unique
 
-Deux agents A2A (e-commerce + paiement) communiquent via un **consent broker** qui journalise et valide chaque mandat avant simulation de charge.
+<table>
+<tr>
+<td width="50%" valign="top">
+
+### Consentement à chaque étape
+
+Pas de paiement « fantôme ». L'utilisateur voit le panier, revoit le montant, et clique **Review & Pay** avant tout débit simulé.
+
+### Agents isolés (A2A)
+
+Deux agents Python (produit + paiement) communiquent via le broker en style **Agent-to-Agent**. Le frontend ne les appelle jamais directement.
+
+</td>
+<td width="50%" valign="top">
+
+### Assistant conversationnel (RAG)
+
+Embeddings + vector store + reranking + Groq LLM. L'IA comprend le contexte multi-tours et distingue **conseil** vs **intention d'achat**.
+
+### Production-ready
+
+Déployé sur **Azure VM** avec Docker Compose, nginx HTTPS, MySQL, et variables d'environnement sécurisées.
+
+</td>
+</tr>
+</table>
+
+---
+
+## Fonctionnalités
+
+| Fonctionnalité | Détail |
+|----------------|--------|
+| **Chat shopping multi-tours** | Historique de conversation ; l'IA se souvient du contexte |
+| **Auto-checkout intelligent** | « Achète-moi les chaussures » → ouvre le modal de paiement |
+| **Recommandations sans achat** | « Que me recommandes-tu ? » → suggestions uniquement |
+| **Chaîne de mandats HMAC** | Intent → Cart → Payment, signés et validés par le broker |
+| **Guardrails IA** | Filtrage entrée/sortie sur les requêtes et actions sensibles |
+| **Auth JWT + MySQL** | Inscription, connexion, sessions sécurisées |
+| **Isolation par utilisateur** | Panier, carte bancaire et commandes propres à chaque compte |
+| **Audit complet** | Journal de toutes les opérations broker et mandats |
+| **Voix (optionnel)** | Transcription audio via Groq Whisper |
+| **Catalogue riche** | Produits avec descriptions, images et recherche sémantique |
+
+---
 
 ## Architecture
 
-```
-┌─────────────┐     A2A      ┌──────────────────┐     A2A      ┌───────────────┐
-│  E-Commerce │◄────────────►│  Consent Broker  │───────────►│ Payment Agent │
-│    Agent    │              │  (validation +   │            │ (mock charge) │
-│  :4001      │              │   audit log)     │            │  :4002        │
-└─────────────┘              │  :4000           │            └───────────────┘
-                             └────────┬─────────┘
-                                      │ REST
-                             ┌────────▼─────────┐
-                             │  Pixelium Store  │
-                             │  (React + AI)    │
-                             │  :3000           │
-                             └──────────────────┘
+```mermaid
+flowchart TB
+    subgraph User["Utilisateur"]
+        Browser["Navigateur"]
+    end
+
+    subgraph Frontend["Dashboard React :3000"]
+        Shop["Catalogue & Chat IA"]
+        Cart["Panier & Checkout"]
+    end
+
+    subgraph Broker["Consent Broker :4000"]
+        API["REST API + JWT"]
+        RAG["RAG Pipeline"]
+        Val["Validation Mandats"]
+        Audit["Audit Log"]
+    end
+
+    subgraph Agents["Agents Python LangGraph"]
+        Product["Product Agent :4001"]
+        Payment["Payment Agent :4002"]
+    end
+
+    subgraph Data["Persistance"]
+        MySQL[("MySQL")]
+    end
+
+    Browser --> Shop
+    Browser --> Cart
+    Shop --> API
+    Cart --> API
+    API --> RAG
+    API --> Val
+    Val --> Product
+    Val --> Payment
+    API --> MySQL
+    Product --> MySQL
+    Val --> Audit
 ```
 
-## Monorepo layout
+### Flux d'un achat (realtime)
+
+```mermaid
+sequenceDiagram
+    participant U as Utilisateur
+    participant D as Dashboard
+    participant B as Consent Broker
+    participant P as Product Agent
+    participant Pay as Payment Agent
+
+    U->>D: "Achète-moi les chaussures"
+    D->>B: POST /api/ai/chat
+    B->>B: RAG + détection intent achat
+    B->>P: build_cart (Intent Mandate)
+    P-->>B: Cart Mandate signé
+    B-->>D: Checkout prêt
+    U->>D: Review & Pay (approbation)
+    D->>B: POST /api/checkout
+    B->>Pay: process_payment (Payment Mandate)
+    Pay-->>B: Preuve de paiement
+    B-->>D: Commande confirmée
+```
+
+### Stack technique
+
+| Couche | Technologies |
+|--------|--------------|
+| **Frontend** | React 19, Vite, TypeScript, CSS custom |
+| **API & orchestration** | Node.js, Express, TypeScript |
+| **Agents** | Python 3, LangGraph, FastAPI |
+| **Intelligence** | Groq LLM, MiniLM embeddings, vector store, RAG |
+| **Sécurité** | JWT, HMAC mandate signing, guardrails |
+| **Données** | MySQL (auth, catalogue, audit) |
+| **Infra** | Docker Compose, nginx, Azure VM, Let's Encrypt |
+
+---
+
+## Structure du monorepo
 
 ```
 pixelium-consent-commerce/
 ├── apps/
-│   ├── dashboard/          # React store UI (:3000)
-│   └── broker/             # Consent broker API (:4000)
+│   ├── dashboard/          # Boutique React — catalogue, chat IA, checkout
+│   └── broker/             # API REST, RAG, orchestration, guardrails
 ├── packages/
-│   ├── shared/             # Mandates, signing, types
-│   ├── audit/              # Order audit log
-│   ├── auth/               # MySQL users + JWT
-│   └── catalog/            # MySQL product store
+│   ├── shared/             # Mandats, signatures HMAC, types, catalogue
+│   ├── auth/               # Utilisateurs MySQL + JWT
+│   ├── catalog/            # Store produits MySQL
+│   └── audit/              # Journal des commandes
 ├── services/
-│   └── agents/             # Python LangGraph agents (:4001, :4002)
-├── scripts/                # verify.ps1, complete.ps1
-└── docs/                   # Reports, specs, demo scripts
+│   └── agents/             # Agents LangGraph Python (:4001, :4002)
+├── docker/                 # Dockerfiles + nginx.conf
+├── scripts/                # Déploiement Azure / VPS
+└── docs/                   # Rapports, specs, doc encadrant
 ```
 
-| Folder | What runs here |
-|--------|----------------|
-| `apps/` | Deployable applications (Node.js) |
-| `packages/` | Shared libraries consumed by apps |
-| `services/` | Standalone Python services (pip, not npm) |
+| Service | Port | Rôle |
+|---------|------|------|
+| `apps/dashboard` | 3000 | Interface boutique (shop, cart, AI, profil) |
+| `apps/broker` | 4000 | Orchestrateur central — seul « boss » |
+| Product Agent | 4001 | Recherche catalogue + Cart Mandate |
+| Payment Agent | 4002 | Validation mandats + charge simulée |
+| MySQL | 3306 | Utilisateurs, produits, audit |
 
-## Fastest way to finish (all 8 weeks)
+---
 
-```powershell
-npm run complete
-```
+## Démarrage rapide
 
-Installs, builds, starts services, runs all demos + security tests, prints week status.  
-Details: [docs/WEEKS.md](./docs/WEEKS.md) · Submit: [docs/SUBMISSION_CHECKLIST.md](./docs/SUBMISSION_CHECKLIST.md)
+### Prérequis
 
-## Quick Start
+- Node.js 20+
+- Python 3.11+
+- MySQL (local ou Docker)
+- Clé API [Groq](https://console.groq.com/) (gratuite)
+
+### Installation locale
 
 ```bash
+git clone https://github.com/Aladimassi/Pixeliumstg.git
+cd Pixeliumstg
 npm install
 pip install -r services/agents/requirements.txt
+cp .env.example .env          # renseigner GROQ_API_KEY + MySQL
 npm run build
 npm run dev
 ```
 
-Open http://localhost:3000 — sign in, browse the catalog, use the **AI assistant**, or checkout from the cart.
+Ouvrir **http://localhost:3000** — se connecter, parcourir le catalogue, discuter avec l'assistant IA, ou passer commande depuis le panier.
 
-## Deploy (production)
-
-Docker Compose deployment (VPS or local):
+### Déploiement production (Docker)
 
 ```bash
-cp .env.production.example .env   # edit passwords + GROQ_API_KEY
+cp .env.production.example .env   # mots de passe + GROQ_API_KEY
 docker compose up -d --build
 ```
 
-Open http://localhost — see [docs/DEPLOY.md](./docs/DEPLOY.md) for HTTPS, VPS, and troubleshooting.
+Guide complet : [docs/DEPLOY.md](./docs/DEPLOY.md) · Azure Windows : [docs/DEPLOY-AZURE-WINDOWS.md](./docs/DEPLOY-AZURE-WINDOWS.md)
 
 ```powershell
-npm run deploy   # Windows helper script
+npm run deploy   # helper Windows
 ```
 
-## Commands
+---
+
+## Commandes utiles
 
 ```bash
-npm run demo:realtime      # Human-present flow
-npm run demo:delegated     # Pre-authorized delegated flow
-npm run demo:ai           # Groq natural-language purchase
-npm run test:adversarial   # Security test pass
-npm run test:agents        # Python agent unit tests (21)
-npm run verify             # Build + demos + tests (agents must be running)
+npm run dev                  # Dev local (dashboard + broker + agents)
+npm run demo:realtime        # Flux achat avec utilisateur présent
+npm run demo:delegated       # Flux pré-autorisé (delegated)
+npm run demo:ai              # Achat en langage naturel via Groq
+npm run test:adversarial     # Tests de sécurité (mandats, injection)
+npm run test:agents          # Tests unitaires Python (21 tests)
+npm run verify               # Build + demos + tests complets
+npm run complete             # Pipeline 8 semaines (install → verify)
 ```
 
-## Project layout
+---
 
-| Path | Port | Role |
-|------|------|------|
-| `apps/dashboard` | 3000 | React store UI (shop, cart, AI, profile) |
-| `apps/broker` | 4000 | REST API + **orchestration** (only boss) |
-| `packages/shared` | — | Mandates, HMAC signing, catalog search |
-| `packages/auth` | — | MySQL users + JWT |
-| `packages/catalog` | — | MySQL product store |
-| `packages/audit` | — | Order audit log |
-| `services/agents` product agent | 4001 | LangGraph: cart builder |
-| `services/agents` payment agent | 4002 | LangGraph: payment proof + charge |
+## Roadmap du stage (8 semaines)
 
-Node.js apps live in `apps/`. Shared TS libraries in `packages/`. Python LangGraph agents in `services/agents/` — the broker calls them over HTTP.
+| Semaine | Focus | Statut |
+|---------|-------|--------|
+| 1 | Format mandats, repo, catalogue mock | ✅ |
+| 2–3 | Agents A2A, handoff tâches | ✅ |
+| 4 | Consent broker, flux realtime | ✅ |
+| 5 | Flux delegated + monitor | ✅ |
+| 6 | Dashboard audit | ✅ |
+| 7 | Tests adversariaux | ✅ |
+| 8 | Rapport, usabilité, polish démo | ✅ |
 
-## Deliverables (complete)
+---
 
-| Deliverable | Location |
-|-------------|----------|
-| **Architecture encadrant (PDF)** | [docs/ARCHITECTURE_ENCADRANT.pdf](./docs/ARCHITECTURE_ENCADRANT.pdf) |
-| **Architecture encadrant (HTML)** | [docs/ARCHITECTURE_ENCADRANT.html](./docs/ARCHITECTURE_ENCADRANT.html) |
-| Working prototype | `apps/`, `packages/`, `services/` |
-| Mandate spec | [docs/MANDATE_FORMAT.md](./docs/MANDATE_FORMAT.md) |
-| Final report | [docs/FINAL_REPORT.md](./docs/FINAL_REPORT.md) |
-| Security memo | [docs/SECURITY_FINDINGS.md](./docs/SECURITY_FINDINGS.md) |
-| Usability study | [docs/USABILITY.md](./docs/USABILITY.md) |
-| Demo script | [docs/DEMO_SCRIPT.md](./docs/DEMO_SCRIPT.md) |
-| Deploy guide | [docs/DEPLOY.md](./docs/DEPLOY.md) |
+## Protocoles de référence
 
-## Groq AI
+- [A2A Protocol](https://a2a-protocol.org/) — communication agent-to-agent
+- [AP2](https://ap2-protocol.org/) — Agent Payments Protocol (Google)
 
-Set `GROQ_API_KEY` in `.env` (see `.env.example`). The broker uses Groq to parse natural-language shopping requests into SKUs and mandate conditions.
+---
 
-```bash
-npm run demo:ai "Buy noise-canceling headphones under 400 dollars"
-```
+<div align="center">
 
-Dashboard: **AI Shopping** panel at http://localhost:3000
+**Pixelium Internship Program 2026**
 
-## Agent Skills (token savings)
+*Prototype de recherche — paiements simulés, ne pas utiliser en production.*
 
-Project skills in `.cursor/skills/`:
+[⬆ Retour en haut](#pixelium-consent-commerce)
 
-- **pixelium** — file map + commands (avoids repo-wide search)
-- **token-efficient** — general low-token workflow
-
-Mention `@pixelium` or `@token-efficient` in Cursor to load them.
-
-## 8-Week Roadmap
-
-| Week | Focus | Status |
-|------|-------|--------|
-| 1 | Mandate format, repo, mock catalog | ✅ |
-| 2–3 | A2A agents, task handoff | ✅ |
-| 4 | Consent broker, realtime flow | ✅ |
-| 5 | Delegated flow + monitor | ✅ |
-| 6 | Audit dashboard | ✅ |
-| 7 | Adversarial tests | ✅ |
-| 8 | Report, usability, demo polish | ✅ |
-
-## Protocol References
-
-- [A2A Protocol](https://a2a-protocol.org/)
-- [AP2](https://ap2-protocol.org/)
+</div>
