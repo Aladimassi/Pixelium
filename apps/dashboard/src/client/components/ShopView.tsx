@@ -202,7 +202,7 @@ export function ShopView({
               type="text"
               id="ai-message"
               className="ai-assistant__input"
-              placeholder='e.g. "Winter is coming" then "take this item"'
+              placeholder='e.g. "Recommend running shoes"'
               value={aiMessage}
               onChange={(e) => onAiMessageChange(e.target.value)}
               onKeyDown={handleInputKeyDown}

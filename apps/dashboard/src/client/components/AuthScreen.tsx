@@ -8,9 +8,6 @@ interface AuthScreenProps {
 
 type AuthMode = 'login' | 'register';
 
-const DEMO_EMAIL = 'demo@pixelium.com';
-const DEMO_PASSWORD = 'demo123';
-
 const FEATURES = [
   { icon: '◈', title: 'Consent-first checkout', desc: 'Every purchase follows a signed mandate chain.' },
   { icon: '◎', title: 'AI shopping assistant', desc: 'Get advice, search, and buy in natural language.' },
@@ -44,12 +41,6 @@ export function AuthScreen({ onLogin, onRegister }: AuthScreenProps) {
   const handleLoginSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     await runLogin(loginEmail.trim(), loginPassword);
-  };
-
-  const handleDemoLogin = async () => {
-    setLoginEmail(DEMO_EMAIL);
-    setLoginPassword(DEMO_PASSWORD);
-    await runLogin(DEMO_EMAIL, DEMO_PASSWORD);
   };
 
   const handleRegisterSubmit = async (e: React.FormEvent) => {
@@ -124,25 +115,6 @@ export function AuthScreen({ onLogin, onRegister }: AuthScreenProps) {
               <div id="auth-panel-login" role="tabpanel" aria-labelledby="auth-tab-login" className="auth-form-wrap">
                 <p className="auth-panel__eyebrow">Welcome back</p>
                 <h2 className="auth-panel__title">Sign in to your store</h2>
-
-                <button
-                  type="button"
-                  className="auth-demo-btn"
-                  disabled={loading}
-                  onClick={handleDemoLogin}
-                >
-                  <span className="auth-demo-btn__icon" aria-hidden="true">
-                    ⚡
-                  </span>
-                  <span>
-                    <strong>Try the demo</strong>
-                    <small>Instant access — no signup needed</small>
-                  </span>
-                </button>
-
-                <div className="auth-or">
-                  <span>or use your email</span>
-                </div>
 
                 <form id="login-form" className="auth-form" onSubmit={handleLoginSubmit}>
                   <div className="auth-field">
