@@ -1,14 +1,7 @@
-export interface Product {
-  sku: string;
-  name: string;
-  category: string;
-  priceCents: number;
-  description: string;
-  refundable: boolean;
-  inStock: number;
-  /** Product photo URL (Unsplash or stored in MySQL). */
-  imageUrl?: string;
-}
+import { STORE_CATALOG, type Product } from './store-catalog.js';
+
+export type { Product } from './store-catalog.js';
+export { STORE_CATALOG, FEATURED_SKUS, STORE_CATALOG as MOCK_CATALOG } from './store-catalog.js';
 
 let activeCatalog: Product[] | null = null;
 
@@ -18,61 +11,8 @@ export function setActiveCatalog(products: Product[]): void {
 }
 
 function getCatalog(): Product[] {
-  return activeCatalog ?? MOCK_CATALOG;
+  return activeCatalog ?? STORE_CATALOG;
 }
-
-export const MOCK_CATALOG: Product[] = [
-  {
-    sku: 'SHOE-RED-HIGH',
-    name: 'Classic Red High-Top Sneakers',
-    category: 'footwear',
-    priceCents: 12999,
-    description:
-      'Bold red high-top sneakers with padded collar and grippy rubber sole. Lightweight for running, training, and everyday wear. Classic court-shoe look that pairs with jeans or joggers.',
-    refundable: true,
-    inStock: 12,
-  },
-  {
-    sku: 'JACKET-GREEN-M',
-    name: 'Waterproof Trail Jacket (Green, M)',
-    category: 'outerwear',
-    priceCents: 18999,
-    description:
-      'Forest-green waterproof trail jacket, size M. Seam-sealed hood, breathable lining, and packable fit for hiking, commuting, and winter weather. Wind-resistant shell keeps you dry in rain and snow.',
-    refundable: true,
-    inStock: 5,
-  },
-  {
-    sku: 'PHONE-17-PRO',
-    name: 'PixelPhone 17 Pro (256GB)',
-    category: 'electronics',
-    priceCents: 169999,
-    description:
-      'Flagship PixelPhone 17 Pro with 256 GB storage, 6.7" OLED display, and built-in AI assistant. Triple-camera system with night mode, all-day battery, and 5G. One-year warranty included.',
-    refundable: false,
-    inStock: 20,
-  },
-  {
-    sku: 'HEADPHONES-NC',
-    name: 'Noise-Canceling Headphones',
-    category: 'electronics',
-    priceCents: 34999,
-    description:
-      'Over-ear active noise-canceling headphones with 40-hour battery, Bluetooth 5.3, and a fold-flat travel case. Adaptive ANC for flights and focus work, with memory-foam ear cushions.',
-    refundable: true,
-    inStock: 30,
-  },
-  {
-    sku: 'BOOK-AI-AGENTS',
-    name: 'Building Agentic Systems',
-    category: 'books',
-    priceCents: 4599,
-    description:
-      'Practical guide to multi-agent architectures, tool use, RAG pipelines, and consent-aware commerce. Covers orchestration patterns and production deployment. Paperback, 320 pages.',
-    refundable: true,
-    inStock: 100,
-  },
-];
 
 const STOP_WORDS = new Set([
   'buy', 'me', 'the', 'a', 'an', 'under', 'over', 'for', 'with', 'want', 'get',

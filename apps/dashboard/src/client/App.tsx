@@ -31,9 +31,18 @@ import { CheckoutModal } from './components/CheckoutModal';
 import { OrdersView, type Order } from './components/OrdersView';
 import { ProductModal } from './components/ProductModal';
 import { ProfileModal } from './components/ProfileModal';
-import { ShopView, StoreHeader, type AiChatTurn } from './components/ShopView';
+import { ShopView, StoreHeader, type AiChatTurn, type CatalogSort } from './components/ShopView';
+import { SiteFooter } from './components/SiteFooter';
 import { Toast } from './components/Toast';
 import { VoidBackground } from './components/VoidBackground';
+import {
+  type DeliveryOption,
+  type ShippingAddress,
+  formatDeliverySummary,
+  getShippingAddress,
+  saveShippingAddress,
+  shippingCostCents,
+} from './lib/shipping';
 
 interface Category {
   name: string;
@@ -61,11 +70,13 @@ interface PendingConsent {
 }
 
 type View = 'shop' | 'orders';
-type CheckoutStep = 'review' | 'processing' | 'success';
+type CheckoutStep = 'shipping' | 'review' | 'processing' | 'success';
 
 function renderCartMandateReview(
   cartMandate: PendingConsent['cart'],
   productsBySku: Record<string, Product>,
+  shippingCents: number,
+  shippingSummary?: string,
   extra?: React.ReactNode
 ) {
   const items = cartMandate.payload.items.map((i, idx) => {
@@ -102,13 +113,16 @@ function renderCartMandateReview(
         <span>Tax</span>
         <span>{formatPrice(cartMandate.payload.taxCents)}</span>
       </div>
+      <div className="review-row">
+        <span>Shipping</span>
+        <span>{shippingCents === 0 ? 'Free' : formatPrice(shippingCents)}</span>
+      </div>
       <div className="review-row review-row--total">
         <span>Total</span>
-        <span>{formatPrice(cartMandate.payload.totalCents)}</span>
+        <span>{formatPrice(cartMandate.payload.totalCents + shippingCents)}</span>
       </div>
-      <p className="hint">
-        Merchant: {cartMandate.payload.merchantName} · Mandates signed (Intent + Cart)
-      </p>
+      {shippingSummary ? <p className="hint">{shippingSummary}</p> : null}
+      <p className="hint">You approve this charge before payment is processed.</p>
     </>
   );
 }
@@ -132,6 +146,9 @@ export function App() {
   const [productsBySku, setProductsBySku] = useState<Record<string, Product>>({});
   const [productsLoading, setProductsLoading] = useState(false);
   const [productsError, setProductsError] = useState<string>();
+  const [featuredProducts, setFeaturedProducts] = useState<Product[]>([]);
+  const [sort, setSort] = useState<CatalogSort>('popular');
+  const [inStockOnly, setInStockOnly] = useState(false);
 
   const [cart, setCart] = useState<CartItem[]>([]);
   const [cartOpen, setCartOpen] = useState(false);
@@ -140,15 +157,19 @@ export function App() {
   const [productModalOpen, setProductModalOpen] = useState(false);
 
   const [checkoutOpen, setCheckoutOpen] = useState(false);
-  const [checkoutStep, setCheckoutStep] = useState<CheckoutStep>('review');
+  const [checkoutStep, setCheckoutStep] = useState<CheckoutStep>('shipping');
   const [checkoutReview, setCheckoutReview] = useState<React.ReactNode>(null);
-  const [checkoutMandateId, setCheckoutMandateId] = useState<string>();
   const [checkoutTotal, setCheckoutTotal] = useState<number>();
+  const [checkoutShippingCents, setCheckoutShippingCents] = useState(0);
+  const [shippingAddress, setShippingAddress] = useState<ShippingAddress>(getShippingAddress());
+  const [deliveryOption, setDeliveryOption] = useState<DeliveryOption>('standard');
   const [checkoutStatus, setCheckoutStatus] = useState<string>();
   const [processingMessage, setProcessingMessage] = useState('Verifying mandate chain & contacting payment agent…');
   const [pendingConsent, setPendingConsent] = useState<PendingConsent | null>(null);
   const [successAmount, setSuccessAmount] = useState<string>();
   const [successTxn, setSuccessTxn] = useState<string>();
+  const [successOrderId, setSuccessOrderId] = useState<string>();
+  const [successDelivery, setSuccessDelivery] = useState<string>();
   const [successItems, setSuccessItems] = useState<PendingConsent['cart']['payload']['items']>([]);
 
   const [profileOpen, setProfileOpen] = useState(false);
@@ -241,9 +262,10 @@ export function App() {
   const loadProducts = useCallback(async () => {
     setProductsLoading(true);
     setProductsError(undefined);
-    const params = new URLSearchParams({ page: String(page), limit: '24' });
+    const params = new URLSearchParams({ page: String(page), limit: '24', sort });
     if (category !== 'all') params.set('category', category);
     if (activeQuery) params.set('q', activeQuery);
+    if (inStockOnly) params.set('inStock', '1');
 
     const { ok, data } = await api<{ products?: Product[]; pages?: number; total?: number; error?: string }>(
       brokerUrl,
@@ -259,7 +281,15 @@ export function App() {
     setPages(data.pages ?? 1);
     setTotal(data.total ?? 0);
     setProductsBySku((prev) => ({ ...prev, ...Object.fromEntries(list.map((p) => [p.sku, p])) }));
-  }, [brokerUrl, page, category, activeQuery]);
+  }, [brokerUrl, page, category, activeQuery, sort, inStockOnly]);
+
+  const loadFeatured = useCallback(async () => {
+    const { ok, data } = await api<{ products?: Product[] }>(brokerUrl, '/api/catalog/featured');
+    if (!ok) return;
+    const list = data.products ?? [];
+    setFeaturedProducts(list);
+    setProductsBySku((prev) => ({ ...prev, ...Object.fromEntries(list.map((p) => [p.sku, p])) }));
+  }, [brokerUrl]);
 
   const loadOrders = useCallback(async () => {
     setOrdersLoading(true);
@@ -309,7 +339,8 @@ export function App() {
     if (!authenticated) return;
     loadAiStatus();
     loadCategories();
-  }, [authenticated, brokerUrl, loadAiStatus, loadCategories]);
+    loadFeatured();
+  }, [authenticated, brokerUrl, loadAiStatus, loadCategories, loadFeatured]);
 
   useEffect(() => {
     if (!authenticated) return;
@@ -416,14 +447,21 @@ export function App() {
     }
     setCartOpen(false);
     setPendingConsent(null);
-    setCheckoutReview(<p className="loading">Building cart mandate…</p>);
-    setCheckoutMandateId(undefined);
+    setCheckoutReview(null);
     setCheckoutTotal(undefined);
+    setCheckoutShippingCents(shippingCostCents(subtotal, deliveryOption));
     setCheckoutStatus(undefined);
-    setCheckoutStep('review');
+    setShippingAddress(getShippingAddress(user.id, user.displayName ?? ''));
+    setCheckoutStep('shipping');
     setCheckoutOpen(true);
+  };
 
+  const prepareCheckoutReview = async () => {
+    if (!user?.id) return;
+    const current = loadCart(user.id);
     const items = current.map((i) => ({ sku: i.sku, quantity: i.quantity }));
+    setCheckoutReview(<p className="loading">Preparing your order…</p>);
+
     const { ok, data } = await api<{
       cartMandate?: PendingConsent['cart'];
       intentMandate?: Mandate;
@@ -438,18 +476,46 @@ export function App() {
       return;
     }
 
+    const shipCents = shippingCostCents(data.cartMandate.payload.subtotalCents, deliveryOption);
+    const shipSummary = formatDeliverySummary(shippingAddress, deliveryOption, shipCents);
     setPendingConsent({ intent: data.intentMandate, cart: data.cartMandate, source: 'cart' });
-    setCheckoutReview(renderCartMandateReview(data.cartMandate, productsBySku));
-    setCheckoutMandateId(data.cartMandate.id);
-    setCheckoutTotal(data.cartMandate.payload.totalCents);
+    setCheckoutReview(
+      renderCartMandateReview(data.cartMandate, productsBySku, shipCents, shipSummary)
+    );
+    setCheckoutShippingCents(shipCents);
+    setCheckoutTotal(data.cartMandate.payload.totalCents + shipCents);
+    setCheckoutStep('review');
+  };
+
+  const handleContinueToReview = async () => {
+    if (!user?.id) return;
+    saveShippingAddress(user.id, shippingAddress);
+    if (pendingConsent) {
+      const shipCents = shippingCostCents(pendingConsent.cart.payload.subtotalCents, deliveryOption);
+      const shipSummary = formatDeliverySummary(shippingAddress, deliveryOption, shipCents);
+      const extra =
+        pendingConsent.parsed && pendingConsent.source === 'ai' ? (
+          <p className="ai-result__summary">{String(pendingConsent.parsed.naturalLanguageIntent ?? '')}</p>
+        ) : undefined;
+      setCheckoutReview(
+        renderCartMandateReview(pendingConsent.cart, productsBySku, shipCents, shipSummary, extra)
+      );
+      setCheckoutShippingCents(shipCents);
+      setCheckoutTotal(pendingConsent.cart.payload.totalCents + shipCents);
+      setCheckoutStep('review');
+      return;
+    }
+    await prepareCheckoutReview();
   };
 
   const closeCheckout = () => {
     setCheckoutOpen(false);
     setPendingConsent(null);
-    setCheckoutStep('review');
+    setCheckoutStep('shipping');
     setCheckoutStatus(undefined);
     setSuccessItems([]);
+    setSuccessOrderId(undefined);
+    setSuccessDelivery(undefined);
   };
 
   const handleConfirmPay = async () => {
@@ -504,8 +570,11 @@ export function App() {
     await new Promise((r) => setTimeout(r, 400));
 
     if (ok && data.success) {
-      setSuccessAmount(formatPrice(cart.payload.totalCents));
-      setSuccessTxn(`Transaction ${data.payment?.transactionId ?? '—'}`);
+      const orderId = `PX-${String(data.payment?.transactionId ?? Date.now()).slice(-8).toUpperCase()}`;
+      setSuccessAmount(formatPrice(cart.payload.totalCents + checkoutShippingCents));
+      setSuccessTxn(`Payment ref ${data.payment?.transactionId ?? '—'}`);
+      setSuccessOrderId(orderId);
+      setSuccessDelivery(formatDeliverySummary(shippingAddress, deliveryOption, checkoutShippingCents));
       setSuccessItems(cart.payload.items);
       if (pendingConsent.source === 'cart') {
         clearCart(user?.id);
@@ -536,14 +605,19 @@ export function App() {
     cartMandate: PendingConsent['cart'],
     parsed?: Record<string, unknown>
   ) => {
+    if (user?.id) {
+      setShippingAddress(getShippingAddress(user.id, user.displayName ?? ''));
+    }
+    const shipCents = shippingCostCents(cartMandate.payload.subtotalCents, deliveryOption);
+    const shipSummary = formatDeliverySummary(shippingAddress, deliveryOption, shipCents);
     setPendingConsent({ intent: intentMandate, cart: cartMandate, parsed, source: 'ai' });
     const extra = parsed ? (
       <p className="ai-result__summary">{String(parsed.naturalLanguageIntent ?? '')}</p>
     ) : undefined;
-    setCheckoutReview(renderCartMandateReview(cartMandate, productsBySku, extra));
-    setCheckoutMandateId(cartMandate.id);
-    setCheckoutTotal(cartMandate.payload.totalCents);
-    setCheckoutStep('review');
+    setCheckoutReview(renderCartMandateReview(cartMandate, productsBySku, shipCents, shipSummary, extra));
+    setCheckoutShippingCents(shipCents);
+    setCheckoutTotal(cartMandate.payload.totalCents + shipCents);
+    setCheckoutStep('shipping');
     setCheckoutStatus(undefined);
     setCheckoutOpen(true);
   };
@@ -631,6 +705,15 @@ export function App() {
     <>
       <VoidBackground />
       <div id="app-shell">
+        <div className="promo-bar">
+          <div className="container promo-bar__inner">
+            <span>Free standard shipping on orders over €50</span>
+            <span className="promo-bar__sep">·</span>
+            <span>30-day returns on eligible items</span>
+            <span className="promo-bar__sep">·</span>
+            <span>Secure consent-first checkout</span>
+          </div>
+        </div>
         <StoreHeader
           view={view}
           cartCount={cartCount(cart)}
@@ -699,6 +782,17 @@ export function App() {
               aiMessage={aiMessage}
               aiChatHistory={aiChatHistory}
               aiBusy={aiBusy}
+              featuredProducts={featuredProducts}
+              sort={sort}
+              inStockOnly={inStockOnly}
+              onSortChange={(s) => {
+                setSort(s);
+                setPage(1);
+              }}
+              onInStockOnlyChange={(v) => {
+                setInStockOnly(v);
+                setPage(1);
+              }}
               onCategoryChange={(cat) => {
                 setCategory(cat);
                 setPage(1);
@@ -729,16 +823,7 @@ export function App() {
           )}
         </main>
 
-        <footer className="site-footer">
-          <div className="container">
-            <p>
-              Pixulium · Secure checkout ·{' '}
-              <button type="button" id="btn-admin" className="btn-ghost btn-inline" onClick={openAdmin}>
-                Audit console
-              </button>
-            </p>
-          </div>
-        </footer>
+        <SiteFooter onAdmin={openAdmin} />
       </div>
 
       <CartDrawer
@@ -768,19 +853,25 @@ export function App() {
         open={checkoutOpen}
         step={checkoutStep}
         reviewHtml={checkoutReview}
-        mandateId={checkoutMandateId}
         totalCents={checkoutTotal}
+        subtotalCents={subtotal}
+        shippingCents={checkoutShippingCents}
         statusMessage={checkoutStatus}
         savedCard={savedCard}
+        shippingAddress={shippingAddress}
+        deliveryOption={deliveryOption}
+        displayName={user?.displayName ?? ''}
         successAmount={successAmount}
         successTxn={successTxn}
+        successOrderId={successOrderId}
+        successDelivery={successDelivery}
         successItems={successItems}
         productsBySku={productsBySku}
         processingMessage={processingMessage}
         canPay={Boolean(pendingConsent && savedCard && isCardComplete(savedCard))}
         onClose={closeCheckout}
         onReject={() => {
-          showToast('Purchase rejected');
+          showToast('Order cancelled');
           setTimeout(closeCheckout, 800);
         }}
         onConfirmPay={handleConfirmPay}
@@ -789,6 +880,12 @@ export function App() {
           setProfileTab('payment');
           setProfileOpen(true);
         }}
+        onShippingChange={setShippingAddress}
+        onDeliveryChange={(opt) => {
+          setDeliveryOption(opt);
+          setCheckoutShippingCents(shippingCostCents(subtotal, opt));
+        }}
+        onContinueToReview={handleContinueToReview}
       />
 
       {user ? (

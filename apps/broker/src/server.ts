@@ -25,7 +25,7 @@ import { parseMultipartAudio } from './multipart-audio.js';
 import { adviseShopping, refreshRagIndex, isIndexReady, getEmbeddingModelName, getVectorIndexSize } from './rag/index.js';
 import { guardInput, guardParsedSku, listGuardrailPolicies, type GuardrailResult } from './guardrails/index.js';
 import type { IntentMandatePayload, MandateChain } from '@pixelium/shared';
-import type { Product } from '@pixelium/shared';
+import { FEATURED_SKUS, type Product } from '@pixelium/shared';
 import {
   initAuth,
   loginUser,
@@ -85,17 +85,52 @@ function productMatchesQuery(p: Product, tokens: string[]): boolean {
 function filterProducts(
   products: Product[],
   q?: string,
-  category?: string
+  category?: string,
+  minPrice?: number,
+  maxPrice?: number,
+  inStockOnly?: boolean
 ): Product[] {
   let list = products;
   if (category && category !== 'all') {
     list = list.filter((p) => p.category === category);
+  }
+  if (typeof minPrice === 'number' && !Number.isNaN(minPrice)) {
+    list = list.filter((p) => p.priceCents >= minPrice);
+  }
+  if (typeof maxPrice === 'number' && !Number.isNaN(maxPrice)) {
+    list = list.filter((p) => p.priceCents <= maxPrice);
+  }
+  if (inStockOnly) {
+    list = list.filter((p) => p.inStock > 0);
   }
   if (q?.trim()) {
     const tokens = q.toLowerCase().split(/\s+/).filter(Boolean);
     list = list.filter((p) => productMatchesQuery(p, tokens));
   }
   return list;
+}
+
+type CatalogSort = 'name-asc' | 'name-desc' | 'price-asc' | 'price-desc' | 'popular';
+
+function sortProducts(products: Product[], sort: CatalogSort): Product[] {
+  const list = [...products];
+  switch (sort) {
+    case 'price-asc':
+      return list.sort((a, b) => a.priceCents - b.priceCents);
+    case 'price-desc':
+      return list.sort((a, b) => b.priceCents - a.priceCents);
+    case 'name-desc':
+      return list.sort((a, b) => b.name.localeCompare(a.name));
+    case 'popular':
+      return list.sort((a, b) => b.inStock - a.inStock || a.name.localeCompare(b.name));
+    default:
+      return list.sort((a, b) => a.name.localeCompare(b.name));
+  }
+}
+
+function parseCatalogSort(raw: unknown): CatalogSort {
+  const allowed: CatalogSort[] = ['name-asc', 'name-desc', 'price-asc', 'price-desc', 'popular'];
+  return typeof raw === 'string' && allowed.includes(raw as CatalogSort) ? (raw as CatalogSort) : 'name-asc';
 }
 
 app.get('/', (_req, res) => {
@@ -241,19 +276,40 @@ app.get('/api/catalog/categories', async (_req, res) => {
   }
 });
 
+app.get('/api/catalog/featured', async (_req, res) => {
+  try {
+    const store = getProductStore();
+    const all = await store.listAll();
+    const bySku = new Map(all.map((p) => [p.sku, p]));
+    const picked = FEATURED_SKUS.map((sku) => bySku.get(sku)).filter(Boolean) as Product[];
+    const fallback = all.filter((p) => p.inStock > 0).slice(0, 8);
+    const products = (picked.length >= 4 ? picked : fallback).slice(0, 8);
+    res.json({ products });
+  } catch (err) {
+    res.status(500).json({ error: err instanceof Error ? err.message : 'Catalog unavailable' });
+  }
+});
+
 app.get('/api/catalog', async (req, res) => {
   try {
     const store = getProductStore();
     const all = await store.listAll();
     const q = typeof req.query.q === 'string' ? req.query.q : undefined;
     const category = typeof req.query.category === 'string' ? req.query.category : undefined;
+    const sort = parseCatalogSort(req.query.sort);
+    const minPrice = req.query.minPrice != null ? Number(req.query.minPrice) : undefined;
+    const maxPrice = req.query.maxPrice != null ? Number(req.query.maxPrice) : undefined;
+    const inStockOnly = req.query.inStock === '1' || req.query.inStock === 'true';
     const page = Math.max(1, Number(req.query.page ?? 1));
     const limit = Math.min(100, Math.max(1, Number(req.query.limit ?? 24)));
-    const filtered = filterProducts(all, q, category);
+    const filtered = sortProducts(
+      filterProducts(all, q, category, minPrice, maxPrice, inStockOnly),
+      sort
+    );
     const total = filtered.length;
     const offset = (page - 1) * limit;
     const products = filtered.slice(offset, offset + limit);
-    res.json({ products, total, page, pages: Math.ceil(total / limit) || 1 });
+    res.json({ products, total, page, pages: Math.ceil(total / limit) || 1, sort });
   } catch (err) {
     res.status(500).json({ error: err instanceof Error ? err.message : 'Catalog unavailable' });
   }
