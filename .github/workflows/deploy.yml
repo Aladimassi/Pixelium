@@ -59,10 +59,16 @@ jobs:
           DEPLOY_USER: ${{ secrets.AZURE_USER }}
         run: |
           set -euo pipefail
+          DEPLOY_HOST="$(echo "${DEPLOY_HOST}" | tr -d '\r\n\t ')"
+          DEPLOY_USER="$(echo "${DEPLOY_USER}" | tr -d '\r\n\t ')"
+          DEPLOY_HOST="${DEPLOY_HOST#https://}"
+          DEPLOY_HOST="${DEPLOY_HOST#http://}"
+          DEPLOY_HOST="${DEPLOY_HOST%%/*}"
           if [ -z "${DEPLOY_HOST}" ] || [ -z "${DEPLOY_USER}" ]; then
             echo "::error::AZURE_HOST and AZURE_USER secrets are required."
             exit 1
           fi
+          echo "Deploy target: ${DEPLOY_USER}@${DEPLOY_HOST}"
           mkdir -p ~/.ssh
           chmod 700 ~/.ssh
 
