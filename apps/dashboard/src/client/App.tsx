@@ -597,8 +597,10 @@ export function App() {
       },
     );
     if (!ok) return { error: data.error ?? 'Could not send reset email' };
-    if (data.emailError) return { emailError: data.emailError };
-    return { emailSent: Boolean(data.emailSent) };
+    if (data.emailError && !data.emailSent) {
+      return { emailError: data.emailError, emailSent: false, message: data.message };
+    }
+    return { emailSent: Boolean(data.emailSent), message: data.message };
   };
 
   const handleResetPassword = async (token: string, password: string) => {

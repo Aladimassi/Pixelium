@@ -75,8 +75,9 @@ export class UserStore {
                 /* column already exists */
             }
         }
+        await this.pool.query('DROP TABLE IF EXISTS password_reset_tokens');
         await this.pool.query(`
-      CREATE TABLE IF NOT EXISTS password_reset_tokens (
+      CREATE TABLE password_reset_tokens (
         id CHAR(36) NOT NULL PRIMARY KEY,
         token_hash CHAR(64) NOT NULL,
         user_id CHAR(36) NOT NULL,
@@ -86,21 +87,6 @@ export class UserStore {
         INDEX idx_password_reset_user (user_id)
       ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci
     `);
-        const [idColumn] = await this.pool.query(`SHOW COLUMNS FROM password_reset_tokens LIKE 'id'`);
-        if (idColumn.length === 0) {
-            await this.pool.query('DROP TABLE IF EXISTS password_reset_tokens');
-            await this.pool.query(`
-        CREATE TABLE password_reset_tokens (
-          id CHAR(36) NOT NULL PRIMARY KEY,
-          token_hash CHAR(64) NOT NULL,
-          user_id CHAR(36) NOT NULL,
-          expires_at DATETIME(3) NOT NULL,
-          used_at DATETIME(3) NULL,
-          UNIQUE KEY uq_password_reset_token (token_hash),
-          INDEX idx_password_reset_user (user_id)
-        ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci
-      `);
-        }
     }
     async countUsers() {
         const [rows] = await this.pool.query('SELECT COUNT(*) AS cnt FROM users');
