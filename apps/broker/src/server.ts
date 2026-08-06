@@ -579,12 +579,30 @@ function registerProtectedRoutes(requireAuth: ReturnType<typeof createRequireAut
         } catch (err) {
           if (!(err instanceof ConversationalMessageError)) {
             const msg = err instanceof Error ? err.message : 'Could not prepare checkout';
+            const { suggestProducts, resolveProductImageUrl } = await import('@pixelium/shared');
+            const suggestions = suggestProducts(text, 3);
+            const picks = suggestions.map((p) => ({
+              sku: p.sku,
+              name: p.name,
+              priceCents: p.priceCents,
+              category: p.category,
+              reason: 'Similar product you might want',
+              imageUrl: resolveProductImageUrl(p),
+            }));
+            const reply =
+              picks.length > 0 && msg.includes('Did you mean')
+                ? msg
+                : picks.length > 0
+                  ? `${msg} Here are some close matches:`
+                  : msg.startsWith("I couldn't find")
+                    ? msg
+                    : `I couldn't start checkout: ${msg}. Try being more specific about the product.`;
             return res.json({
               rag: true,
               chat: true,
-              reply: `I couldn't start checkout: ${msg}. Try being more specific about the product.`,
-              picks: [],
-              retrievedCount: 0,
+              reply,
+              picks,
+              retrievedCount: picks.length,
               usedGroq: false,
               conversational: true,
             });

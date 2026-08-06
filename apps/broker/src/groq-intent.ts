@@ -1,5 +1,5 @@
 import Groq from 'groq-sdk';
-import { computeTax, getProduct, searchProducts } from '@pixelium/shared';
+import { computeTax, getProduct, searchProducts, suggestProducts, buildNoProductMatchMessage } from '@pixelium/shared';
 export interface ParsedPurchaseIntent {
   sku: string;
   quantity: number;
@@ -325,9 +325,7 @@ function resolveMaxPriceCents(
 function parseIntentFallback(message: string): ParsedPurchaseIntent {
   const candidates = catalogCandidatesForPrompt(message);
   if (candidates.length === 0) {
-    throw new Error(
-      `No catalog product matches "${message}". Try describing the item, category, or brand.`
-    );
+    throwNoProductMatch(message);
   }
 
   const delegated = /\b(later|away|automatic|delegate|without me|not present)\b/i.test(message);
@@ -440,6 +438,11 @@ async function callGroq(
   });
 }
 
+function throwNoProductMatch(message: string): never {
+  const suggestions = suggestProducts(message, 3);
+  throw new Error(buildNoProductMatchMessage(message, suggestions));
+}
+
 function sleep(ms: number) {
   return new Promise((r) => setTimeout(r, ms));
 }
@@ -550,9 +553,7 @@ export async function parseShoppingIntent(message: string): Promise<ParsedPurcha
 
   const candidates = catalogCandidatesForPrompt(trimmed);
   if (candidates.length === 0) {
-    throw new Error(
-      `No products found for "${trimmed}". Try different keywords (e.g. train set, headphones, game).`
-    );
+    throwNoProductMatch(trimmed);
   }
 
   const apiKey = process.env.GROQ_API_KEY?.trim();
