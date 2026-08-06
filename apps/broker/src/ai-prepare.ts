@@ -23,13 +23,21 @@ export function buildPurchaseQuery(message: string, history: ChatHistoryTurn[] =
     return current;
   }
 
-  // Pronoun / deictic follow-up — use recent conversation for product context.
+  // Pronoun / deictic follow-up — use recent user messages for product context.
   if (/\b(it|them|those|this|that|the one|this item|that item|this one|that one)\b/i.test(current)) {
-    const recent = history.slice(-3).map((t) => t.content.trim()).filter(Boolean);
+    const recent = history
+      .filter((t) => t.role === 'user')
+      .slice(-3)
+      .map((t) => t.content.trim())
+      .filter(Boolean);
     return [...recent, current].join('. ');
   }
 
-  const parts = history.slice(-4).map((t) => t.content.trim()).filter(Boolean);
+  const parts = history
+    .filter((t) => t.role === 'user')
+    .slice(-4)
+    .map((t) => t.content.trim())
+    .filter(Boolean);
   parts.push(current);
   return parts.join('. ');
 }

@@ -39,9 +39,9 @@ Include 0-3 picks. If no product fits, use "picks": [] and explain in reply.`;
 
 function trimHistory(history: ChatHistoryTurn[]): ChatHistoryTurn[] {
   return history
-    .filter((t) => t.content.trim())
+    .filter((t) => t.role === 'user' && t.content.trim())
     .slice(-MAX_HISTORY_TURNS)
-    .map((t) => ({ role: t.role, content: t.content.trim() }));
+    .map((t) => ({ role: 'user' as const, content: t.content.trim() }));
 }
 
 function picksFromGroq(
@@ -119,7 +119,7 @@ export async function shoppingAssistantChat(
 
   const messages: Array<{ role: 'system' | 'user' | 'assistant'; content: string }> = [
     { role: 'system', content: CHAT_SYSTEM + catalogBlock + `\n\nDETECTED INTENT: ${intent}` },
-    ...prior.map((t) => ({ role: t.role, content: t.content })),
+    ...prior.map((t) => ({ role: 'user' as const, content: t.content })),
     { role: 'user', content: trimmed },
   ];
 

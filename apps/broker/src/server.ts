@@ -25,7 +25,7 @@ import { prepareAiPurchase } from './ai-prepare.js';
 import { isVoiceTranscribeConfigured, transcribeAudioBuffer, getVoiceTranscribeModel, warmWhisperModel, usesGroqWhisper } from './voice-transcribe.js';
 import { parseMultipartAudio } from './multipart-audio.js';
 import { adviseShopping, refreshRagIndex, isIndexReady, getEmbeddingModelName, getVectorIndexSize } from './rag/index.js';
-import { guardInput, guardParsedSku, listGuardrailPolicies, type GuardrailResult } from './guardrails/index.js';
+import { guardInput, guardParsedSku, listGuardrailPolicies, sanitizeChatHistory, type GuardrailResult } from './guardrails/index.js';
 import type { IntentMandatePayload, MandateChain } from '@pixelium/shared';
 import { FEATURED_SKUS, type Product } from '@pixelium/shared';
 import {
@@ -549,14 +549,14 @@ function registerProtectedRoutes(requireAuth: ReturnType<typeof createRequireAut
       const inputGuard = guardInput(text);
       if (!inputGuard.allowed) return rejectGuardrail(res, inputGuard);
 
-      const prior: Array<{ role: 'user' | 'assistant'; content: string }> = [];
-      if (Array.isArray(history)) {
-        for (const turn of history.slice(-10)) {
-          if (!turn || typeof turn !== 'object') continue;
-          const role = turn.role === 'assistant' ? 'assistant' : turn.role === 'user' ? 'user' : null;
-          const content = String(turn.content ?? '').trim();
-          if (role && content) prior.push({ role, content });
-        }
+      const { turns: prior, blocked: historyBlocked } = sanitizeChatHistory(history);
+      if (historyBlocked) {
+        return rejectGuardrail(res, {
+          allowed: false,
+          tier: 'input',
+          rule: historyBlocked.rule,
+          message: historyBlocked.message,
+        });
       }
 
       if (isPurchaseIntentMessage(text)) {

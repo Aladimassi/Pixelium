@@ -8,17 +8,20 @@ export const MAX_SEARCH_TOKENS = 12;
 export const INPUT_BLOCK_PATTERNS: Array<{ id: string; pattern: RegExp; message: string }> = [
   {
     id: 'prompt_injection',
-    pattern: /\b(ignore (all )?(previous|prior|above) instructions|disregard (your )?rules|you are now|act as|jailbreak|DAN mode)\b/i,
+    pattern:
+      /\b(ignore (all )?(previous|prior|above) instructions|disregard (your )?rules|forget (your )?(all )?(previous|prior) instructions|override (the )?(system )?prompt|new instructions|you are now|pretend (you are|to be)|act as|jailbreak|dan mode|reveal (your )?(system )?(prompt|instructions|secrets)|show (me )?(the )?(env|environment|api keys?))\b/i,
     message: 'Prompt injection patterns are not allowed.',
   },
   {
     id: 'payment_bypass',
-    pattern: /\b(charge (my )?card|pay now|process payment|submit payment|bypass (the )?broker|without (my )?approval|skip consent)\b/i,
+    pattern:
+      /\b(charge (my )?card|pay now|process payment|submit payment|bypass (the )?broker|without (my )?approval|skip consent)\b/i,
     message: 'Direct payment commands must go through checkout and consent review.',
   },
   {
     id: 'sql_injection',
-    pattern: /(\bUNION\b.+\bSELECT\b|--\s|;\s*DROP\b|'\s*OR\s+'1'\s*=\s*'1)/i,
+    pattern:
+      /(\bUNION\b.+\bSELECT\b|;\s*DROP\b|'\s*OR\s+'1'\s*=\s*'1'|(?:^|[;\s])--\s*(?:DROP|DELETE|INSERT|UPDATE|SELECT|UNION))/i,
     message: 'Invalid search characters detected.',
   },
 ];

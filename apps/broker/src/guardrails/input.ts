@@ -1,3 +1,4 @@
+import { normalizeGuardText } from './normalize.js';
 import { INPUT_BLOCK_PATTERNS, MAX_INPUT_LENGTH } from './policies.js';
 import type { GuardrailResult } from './types.js';
 
@@ -21,8 +22,9 @@ export function guardInput(message: string): GuardrailResult {
     return block('input', 'message_too_long', `Message exceeds ${MAX_INPUT_LENGTH} characters.`);
   }
 
+  const normalized = normalizeGuardText(text);
   for (const { id, pattern, message } of INPUT_BLOCK_PATTERNS) {
-    if (pattern.test(text)) {
+    if (pattern.test(normalized)) {
       return block('input', id, message);
     }
   }

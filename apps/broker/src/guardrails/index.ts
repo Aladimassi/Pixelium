@@ -1,6 +1,8 @@
 import { INPUT_BLOCK_PATTERNS } from './policies.js';
 
 export { guardInput } from './input.js';
+export { normalizeGuardText } from './normalize.js';
+export { sanitizeChatHistory, type ChatHistoryTurn, type GuardrailBlock } from './history.js';
 export { guardAdviceOutput, guardParsedSku } from './output.js';
 export { guardPaymentAction } from './actions.js';
 export {
@@ -22,6 +24,7 @@ export function listGuardrailPolicies() {
         rules: [
           'empty_message',
           'message_too_long',
+          'history_injection',
           ...INPUT_BLOCK_PATTERNS.map((p) => p.id),
         ],
       },
