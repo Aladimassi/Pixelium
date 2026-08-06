@@ -39,6 +39,7 @@ jobs:
       - name: Install and build
         run: |
           npm ci
+          find . -name '*.tsbuildinfo' -delete
           npm run build
 
       - name: Create deploy archive

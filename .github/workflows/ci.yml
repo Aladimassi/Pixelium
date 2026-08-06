@@ -27,7 +27,7 @@ jobs:
         run: npm ci
 
       - name: Build TypeScript workspaces
-        run: npm run build
+        run: find . -name '*.tsbuildinfo' -delete && npm run build
 
       - name: Guardrail tests
         run: npm run test:guardrails -w @pixelium/consent-broker
