@@ -81,7 +81,8 @@ bash scripts/create-deploy-archive.sh
 
 | Issue | Fix |
 |-------|-----|
-| Deploy SSH fails | Check `AZURE_*` secrets and VM firewall (port 22). Re-paste the full private key (`-----BEGIN ... KEY-----` through `-----END ... KEY-----`) into `AZURE_SSH_PRIVATE_KEY`. If you use a **production** environment, add secrets there too. |
+| Deploy SSH fails (exit 255) | SSH works from your PC but **GitHub Actions uses different IPs**. In Azure Portal → VM → **Networking** → NSG → add inbound rule: **SSH port 22**, source **Any** (`*`). Key-only auth keeps this reasonably safe. |
+| Deploy SSH fails (other) | Check `AZURE_*` secrets. Re-paste the full private key into `AZURE_SSH_PRIVATE_KEY` (repo + production environment). |
 | CI Docker build fails | Ensure `.env` vars in workflow match `docker-compose.yml` required keys |
 | Health check timeout | SSH to VM: `docker compose -f ~/pixelium/docker-compose.yml ps` and `logs broker` |
 | Deploy skipped | CI must pass on `main` before auto-deploy runs |
