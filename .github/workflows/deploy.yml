@@ -65,8 +65,13 @@ jobs:
           fi
           mkdir -p ~/.ssh
           chmod 700 ~/.ssh
-          printf '%s\n' "$SSH_PRIVATE_KEY" > ~/.ssh/deploy_key
+          printf '%s\n' "$SSH_PRIVATE_KEY" | tr -d '\r' > ~/.ssh/deploy_key
           chmod 600 ~/.ssh/deploy_key
+          if ! ssh-keygen -y -f ~/.ssh/deploy_key >/dev/null 2>&1; then
+            echo "::error::AZURE_SSH_PRIVATE_KEY is invalid. Re-copy from: Get-Content \$env:USERPROFILE\\.ssh\\azure_vm | Set-Clipboard"
+            exit 1
+          fi
+          echo "Deploy key fingerprint: $(ssh-keygen -lf ~/.ssh/deploy_key | awk '{print $2}')"
           ssh-keyscan -H "$DEPLOY_HOST" >> ~/.ssh/known_hosts 2>/dev/null
           chmod 644 ~/.ssh/known_hosts
 
@@ -74,8 +79,9 @@ jobs:
 
           echo "Testing SSH connectivity to ${DEPLOY_USER}@${DEPLOY_HOST}..."
           if ! ssh "${SSH_OPTS[@]}" "${DEPLOY_USER}@${DEPLOY_HOST}" "echo SSH_OK"; then
-            echo "::error::SSH failed from GitHub Actions (exit 255). Your PC can SSH but GitHub runners use different IPs."
-            echo "::error::Open Azure NSG inbound port 22 to Internet, or use a self-hosted runner on the VM."
+            echo "::error::SSH authentication failed (exit 255)."
+            echo "::error::Update AZURE_SSH_PRIVATE_KEY: run Get-Content \$env:USERPROFILE\\.ssh\\azure_vm | Set-Clipboard and paste into GitHub Secrets."
+            echo "::error::Expected fingerprint: SHA256:... (compare with Deploy key fingerprint above and ssh-keygen -lf ~/.ssh/azure_vm.pub locally)."
             exit 255
           fi
 
