@@ -77,13 +77,30 @@ export class UserStore {
         }
         await this.pool.query(`
       CREATE TABLE IF NOT EXISTS password_reset_tokens (
-        token_hash CHAR(64) NOT NULL PRIMARY KEY,
+        id CHAR(36) NOT NULL PRIMARY KEY,
+        token_hash CHAR(64) NOT NULL,
         user_id CHAR(36) NOT NULL,
         expires_at DATETIME(3) NOT NULL,
         used_at DATETIME(3) NULL,
+        UNIQUE KEY uq_password_reset_token (token_hash),
         INDEX idx_password_reset_user (user_id)
       ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci
     `);
+        const [idColumn] = await this.pool.query(`SHOW COLUMNS FROM password_reset_tokens LIKE 'id'`);
+        if (idColumn.length === 0) {
+            await this.pool.query('DROP TABLE IF EXISTS password_reset_tokens');
+            await this.pool.query(`
+        CREATE TABLE password_reset_tokens (
+          id CHAR(36) NOT NULL PRIMARY KEY,
+          token_hash CHAR(64) NOT NULL,
+          user_id CHAR(36) NOT NULL,
+          expires_at DATETIME(3) NOT NULL,
+          used_at DATETIME(3) NULL,
+          UNIQUE KEY uq_password_reset_token (token_hash),
+          INDEX idx_password_reset_user (user_id)
+        ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci
+      `);
+        }
     }
     async countUsers() {
         const [rows] = await this.pool.query('SELECT COUNT(*) AS cnt FROM users');
@@ -175,8 +192,9 @@ export class UserStore {
         const token = randomUUID();
         const tokenHash = createHash('sha256').update(token).digest('hex');
         const expiresAt = new Date(Date.now() + 60 * 60 * 1000);
+        const resetId = randomUUID();
         await this.pool.query('DELETE FROM password_reset_tokens WHERE user_id = ?', [row.id]);
-        await this.pool.query(`INSERT INTO password_reset_tokens (token_hash, user_id, expires_at) VALUES (?, ?, ?)`, [tokenHash, row.id, expiresAt]);
+        await this.pool.query(`INSERT INTO password_reset_tokens (id, token_hash, user_id, expires_at) VALUES (?, ?, ?, ?)`, [resetId, tokenHash, row.id, expiresAt]);
         return token;
     }
     async resetPasswordWithToken(token, newPassword) {
