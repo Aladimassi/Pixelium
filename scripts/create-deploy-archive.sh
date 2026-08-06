@@ -4,15 +4,24 @@ set -euo pipefail
 ROOT="$(cd "$(dirname "$0")/.." && pwd)"
 cd "$ROOT"
 
-OUTPUT="${1:-pixelium-deploy.tar.gz}"
+FINAL="${1:-pixelium-deploy.tar.gz}"
+STAGING="${RUNNER_TEMP:-/tmp}/pixelium-deploy.$$.tar.gz"
 
-tar -czf "$OUTPUT" \
+rm -f "$STAGING" "$FINAL"
+
+tar -czf "$STAGING" \
   --exclude=node_modules \
   --exclude=.git \
   --exclude=data \
   --exclude=.cursor \
+  --exclude=.pytest_cache \
+  --exclude=__pycache__ \
   --exclude='*.tar.gz' \
-  --exclude='.env' \
+  --exclude=.env \
+  --exclude='*.tsbuildinfo' \
+  --exclude=terminals \
+  --exclude='*.log' \
   .
 
-echo "Created $OUTPUT ($(du -h "$OUTPUT" | awk '{print $1}'))"
+mv "$STAGING" "$FINAL"
+ls -lh "$FINAL"

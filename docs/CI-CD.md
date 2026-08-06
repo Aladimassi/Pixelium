@@ -85,3 +85,4 @@ bash scripts/create-deploy-archive.sh
 | CI Docker build fails | Ensure `.env` vars in workflow match `docker-compose.yml` required keys |
 | Health check timeout | SSH to VM: `docker compose -f ~/pixelium/docker-compose.yml ps` and `logs broker` |
 | Deploy skipped | CI must pass on `main` before auto-deploy runs |
+| Create deploy archive fails | Archive is written to `$RUNNER_TEMP` first to avoid tar self-inclusion; check Actions log for `tar` errors |
