@@ -4,7 +4,7 @@ import { BrandLogo } from './BrandLogo';
 interface AuthScreenProps {
   onLogin: (email: string, password: string) => Promise<string | null>;
   onRegister: (displayName: string, email: string, password: string) => Promise<string | null>;
-  onForgotPassword: (email: string) => Promise<{ error?: string; emailError?: string; emailSent?: boolean; message?: string } | null>;
+  onForgotPassword: (email: string) => Promise<{ error?: string; message?: string } | null>;
   onResetPassword: (token: string, password: string) => Promise<string | null>;
   initialResetToken?: string;
 }
@@ -91,23 +91,10 @@ export function AuthScreen({
     const result = await onForgotPassword(forgotEmail.trim());
     if (result?.error) {
       setError(result.error);
-    } else if (result?.emailSent) {
-      setInfo(
-        result.message ??
-          'If an account exists for that email, we sent password reset instructions. Check your inbox.',
-      );
-    } else if (result?.emailError) {
-      setInfo(
-        result.message ??
-          'If an account exists for that email, reset instructions were prepared.',
-      );
-      setError(
-        `${result.emailError} Ask your admin to configure SMTP on the server, or try again later.`,
-      );
     } else {
       setInfo(
         result?.message ??
-          'If an account exists for that email, reset instructions were prepared. If you do not receive an email within a few minutes, check spam or contact support.',
+          'If an account exists for that email, we sent password reset instructions. Check your inbox.',
       );
     }
     setLoading(false);

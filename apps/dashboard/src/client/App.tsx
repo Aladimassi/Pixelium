@@ -588,7 +588,7 @@ export function App() {
 
   const handleForgotPassword = async (email: string) => {
     if (!brokerUrl) return { error: 'Store is still loading — try again in a moment' };
-    const { ok, data } = await api<{ message?: string; error?: string; emailError?: string; emailSent?: boolean }>(
+    const { ok, data } = await api<{ message?: string; error?: string }>(
       brokerUrl,
       '/api/auth/forgot-password',
       {
@@ -597,10 +597,7 @@ export function App() {
       },
     );
     if (!ok) return { error: data.error ?? 'Could not send reset email' };
-    if (data.emailError && !data.emailSent) {
-      return { emailError: data.emailError, emailSent: false, message: data.message };
-    }
-    return { emailSent: Boolean(data.emailSent), message: data.message };
+    return { message: data.message };
   };
 
   const handleResetPassword = async (token: string, password: string) => {

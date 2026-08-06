@@ -40,6 +40,7 @@ services:
       PAYMENT_URL: http://payment-agent:4002
       AUDIT_DB_PATH: /data/audit.json
       PUBLIC_APP_URL: ${PUBLIC_APP_URL:-${PUBLIC_URL:-http://localhost:3000}}
+      CORS_ORIGINS: ${CORS_ORIGINS:-https://pixelium.duckdns.org,http://localhost:3000,http://localhost:5173}
       SMTP_HOST: ${SMTP_HOST:-}
       SMTP_PORT: ${SMTP_PORT:-587}
       SMTP_USER: ${SMTP_USER:-}

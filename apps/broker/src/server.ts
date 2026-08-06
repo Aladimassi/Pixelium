@@ -1,6 +1,5 @@
 import './load-env.js';
 import express from 'express';
-import cors from 'cors';
 import {
   auditStore,
   applyShippingToCart,
@@ -44,11 +43,13 @@ import {
 } from '@pixelium/auth';
 import { initCatalog, getProductStore } from '@pixelium/catalog';
 import { isMailConfigured, publicAppUrl, sendPasswordResetEmail, trySendPurchaseReceiptEmail } from './mail.js';
+import { createCorsMiddleware } from './cors-config.js';
+import { forgotPasswordRateLimit, loginRateLimit, registerRateLimit } from './rate-limit.js';
 
 const PORT = Number(process.env.BROKER_PORT ?? 4000);
 
 const app = express();
-app.use(cors());
+app.use(createCorsMiddleware());
 app.use(express.json({ limit: '2mb' }));
 
 startDelegatedMonitor(5000);
@@ -229,7 +230,7 @@ app.get('/api/auth/status', async (_req, res) => {
   }
 });
 
-app.post('/api/auth/login', async (req, res) => {
+app.post('/api/auth/login', loginRateLimit, async (req, res) => {
   try {
     if (!isAuthReady()) return authUnavailable(res);
     const { email, password } = req.body;
@@ -248,7 +249,7 @@ app.post('/api/auth/login', async (req, res) => {
   }
 });
 
-app.post('/api/auth/register', async (req, res) => {
+app.post('/api/auth/register', registerRateLimit, async (req, res) => {
   try {
     if (!isAuthReady()) return authUnavailable(res);
     const { email, password, displayName } = req.body;
@@ -293,7 +294,7 @@ async function attachPurchaseReceiptEmail(
   return { emailSent: sent, emailError: error };
 }
 
-app.post('/api/auth/forgot-password', async (req, res) => {
+app.post('/api/auth/forgot-password', forgotPasswordRateLimit, async (req, res) => {
   try {
     if (!isAuthReady()) return authUnavailable(res);
     const { email } = req.body;
@@ -302,26 +303,20 @@ app.post('/api/auth/forgot-password', async (req, res) => {
     }
     const normalized = String(email).trim().toLowerCase();
     const token = await requestPasswordReset(normalized);
-    let emailSent = false;
-    let emailError: string | undefined;
     if (token) {
       const resetUrl = `${publicAppUrl()}/reset-password?token=${encodeURIComponent(token)}`;
       if (isMailConfigured()) {
         try {
           await sendPasswordResetEmail(normalized, resetUrl);
-          emailSent = true;
         } catch (err) {
-          emailError = err instanceof Error ? err.message : 'Could not send email';
+          const emailError = err instanceof Error ? err.message : 'Could not send email';
           console.error('[password-reset]', emailError);
         }
-      } else {
-        emailError = 'Email delivery is not configured on the server.';
-        if (process.env.NODE_ENV !== 'production') {
-          console.info('[password-reset] SMTP not configured. Reset link:', resetUrl);
-        }
+      } else if (process.env.NODE_ENV !== 'production') {
+        console.info('[password-reset] SMTP not configured. Reset link:', resetUrl);
       }
     }
-    res.json({ message: PASSWORD_RESET_SENT, emailSent, emailError });
+    res.json({ message: PASSWORD_RESET_SENT });
   } catch (err) {
     const message = err instanceof Error ? err.message : 'Request failed';
     if (message.includes('Auth not initialized')) return authUnavailable(res);
@@ -919,6 +914,14 @@ async function start() {
   }
 
   registerProtectedRoutes(createRequireAuth(userStore));
+
+  app.use((err: unknown, _req: express.Request, res: express.Response, next: express.NextFunction) => {
+    if (err instanceof Error && err.message.startsWith('CORS blocked')) {
+      res.status(403).json({ error: 'Origin not allowed' });
+      return;
+    }
+    next(err);
+  });
 
   void warmWhisperModel()
     .then((model) => {
