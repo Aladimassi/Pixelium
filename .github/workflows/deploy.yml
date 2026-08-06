@@ -75,8 +75,6 @@ jobs:
             echo "::error::AZURE_SSH_PRIVATE_KEY is not a valid OpenSSH private key (check newlines and BEGIN/END lines)."
             exit 1
           fi
-          eval "$(ssh-agent -s)"
-          ssh-add ~/.ssh/deploy_key
           ssh-keyscan -H "$DEPLOY_HOST" >> ~/.ssh/known_hosts 2>/dev/null
           chmod 644 ~/.ssh/known_hosts
 
@@ -85,14 +83,17 @@ jobs:
           DEPLOY_HOST: ${{ secrets.AZURE_HOST }}
           DEPLOY_USER: ${{ secrets.AZURE_USER }}
         run: |
-          scp -o BatchMode=yes pixelium-deploy.tar.gz scripts/remote-deploy.sh "${DEPLOY_USER}@${DEPLOY_HOST}:/home/${DEPLOY_USER}/"
+          scp -i ~/.ssh/deploy_key -o BatchMode=yes -o StrictHostKeyChecking=yes \
+            pixelium-deploy.tar.gz scripts/remote-deploy.sh \
+            "${DEPLOY_USER}@${DEPLOY_HOST}:/home/${DEPLOY_USER}/"
 
       - name: Run remote deploy
         env:
           DEPLOY_HOST: ${{ secrets.AZURE_HOST }}
           DEPLOY_USER: ${{ secrets.AZURE_USER }}
         run: |
-          ssh -o BatchMode=yes "${DEPLOY_USER}@${DEPLOY_HOST}" "chmod +x ~/remote-deploy.sh && bash ~/remote-deploy.sh"
+          ssh -i ~/.ssh/deploy_key -o BatchMode=yes -o StrictHostKeyChecking=yes \
+            "${DEPLOY_USER}@${DEPLOY_HOST}" "chmod +x ~/remote-deploy.sh && bash ~/remote-deploy.sh"
 
       - name: Verify production health
         env:
