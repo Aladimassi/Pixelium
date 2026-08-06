@@ -17,6 +17,8 @@ export declare class UserStore {
     findById(id: string): Promise<User | null>;
     updateProfile(id: string, updates: ProfileUpdate): Promise<User>;
     changePassword(id: string, currentPassword: string, newPassword: string): Promise<void>;
+    createPasswordResetToken(email: string): Promise<string | null>;
+    resetPasswordWithToken(token: string, newPassword: string): Promise<void>;
     close(): Promise<void>;
 }
 export declare function mysqlConfigFromEnv(): MySqlConfig;

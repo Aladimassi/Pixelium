@@ -23,3 +23,5 @@ export declare function updateUserProfile(userId: string, updates: {
     token: string;
 }>;
 export declare function changeUserPassword(userId: string, currentPassword: string, newPassword: string): Promise<void>;
+export declare function requestPasswordReset(email: string): Promise<string | null>;
+export declare function resetPasswordWithToken(token: string, newPassword: string): Promise<void>;

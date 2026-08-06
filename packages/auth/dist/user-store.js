@@ -1,4 +1,4 @@
-import { randomUUID } from 'node:crypto';
+import { randomUUID, createHash } from 'node:crypto';
 import bcrypt from 'bcryptjs';
 import mysql from 'mysql2/promise';
 const MAX_AVATAR_BYTES = 512_000;
@@ -75,6 +75,15 @@ export class UserStore {
                 /* column already exists */
             }
         }
+        await this.pool.query(`
+      CREATE TABLE IF NOT EXISTS password_reset_tokens (
+        token_hash CHAR(64) NOT NULL PRIMARY KEY,
+        user_id CHAR(36) NOT NULL,
+        expires_at DATETIME(3) NOT NULL,
+        used_at DATETIME(3) NULL,
+        INDEX idx_password_reset_user (user_id)
+      ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci
+    `);
     }
     async countUsers() {
         const [rows] = await this.pool.query('SELECT COUNT(*) AS cnt FROM users');
@@ -156,6 +165,36 @@ export class UserStore {
             throw new Error('Current password is incorrect');
         const passwordHash = await bcrypt.hash(newPassword, 10);
         await this.pool.query('UPDATE users SET password_hash = ? WHERE id = ?', [passwordHash, id]);
+    }
+    async createPasswordResetToken(email) {
+        const normalized = email.trim().toLowerCase();
+        const [rows] = await this.pool.query('SELECT id FROM users WHERE email = ? LIMIT 1', [normalized]);
+        const row = rows[0];
+        if (!row)
+            return null;
+        const token = randomUUID();
+        const tokenHash = createHash('sha256').update(token).digest('hex');
+        const expiresAt = new Date(Date.now() + 60 * 60 * 1000);
+        await this.pool.query('DELETE FROM password_reset_tokens WHERE user_id = ?', [row.id]);
+        await this.pool.query(`INSERT INTO password_reset_tokens (token_hash, user_id, expires_at) VALUES (?, ?, ?)`, [tokenHash, row.id, expiresAt]);
+        return token;
+    }
+    async resetPasswordWithToken(token, newPassword) {
+        if (newPassword.length < 6) {
+            throw new Error('Password must be at least 6 characters');
+        }
+        const tokenHash = createHash('sha256').update(token.trim()).digest('hex');
+        const [rows] = await this.pool.query(`SELECT user_id, expires_at, used_at FROM password_reset_tokens WHERE token_hash = ? LIMIT 1`, [tokenHash]);
+        const row = rows[0];
+        if (!row || row.used_at) {
+            throw new Error('Invalid or expired reset link');
+        }
+        if (new Date(row.expires_at).getTime() < Date.now()) {
+            throw new Error('Invalid or expired reset link');
+        }
+        const passwordHash = await bcrypt.hash(newPassword, 10);
+        await this.pool.query('UPDATE users SET password_hash = ? WHERE id = ?', [passwordHash, row.user_id]);
+        await this.pool.query('UPDATE password_reset_tokens SET used_at = CURRENT_TIMESTAMP(3) WHERE token_hash = ?', [tokenHash]);
     }
     /** Create demo account or reset its password (deploy-safe). */
     async ensureDemoAccount(email, password, displayName) {

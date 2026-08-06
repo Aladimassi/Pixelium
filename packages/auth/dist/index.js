@@ -43,4 +43,12 @@ export async function changeUserPassword(userId, currentPassword, newPassword) {
     const store = getUserStore();
     await store.changePassword(userId, currentPassword, newPassword);
 }
+export async function requestPasswordReset(email) {
+    const store = getUserStore();
+    return store.createPasswordResetToken(email);
+}
+export async function resetPasswordWithToken(token, newPassword) {
+    const store = getUserStore();
+    await store.resetPasswordWithToken(token, newPassword);
+}
 //# sourceMappingURL=index.js.map
