@@ -27,7 +27,6 @@ jobs:
     if: |
       github.event_name == 'workflow_dispatch' ||
       (github.event.workflow_run.conclusion == 'success')
-    environment: production
     steps:
       - name: Checkout
         uses: actions/checkout@v4
@@ -55,23 +54,37 @@ jobs:
       - name: Upload and deploy to Azure VM
         env:
           SSH_PRIVATE_KEY: ${{ secrets.AZURE_SSH_PRIVATE_KEY }}
+          SSH_PRIVATE_KEY_B64: ${{ secrets.AZURE_SSH_PRIVATE_KEY_B64 }}
           DEPLOY_HOST: ${{ secrets.AZURE_HOST }}
           DEPLOY_USER: ${{ secrets.AZURE_USER }}
         run: |
           set -euo pipefail
-          if [ -z "${SSH_PRIVATE_KEY}" ] || [ -z "${DEPLOY_HOST}" ] || [ -z "${DEPLOY_USER}" ]; then
-            echo "::error::AZURE_SSH_PRIVATE_KEY, AZURE_HOST, and AZURE_USER secrets are required."
+          if [ -z "${DEPLOY_HOST}" ] || [ -z "${DEPLOY_USER}" ]; then
+            echo "::error::AZURE_HOST and AZURE_USER secrets are required."
             exit 1
           fi
           mkdir -p ~/.ssh
           chmod 700 ~/.ssh
-          printf '%s\n' "$SSH_PRIVATE_KEY" | tr -d '\r' > ~/.ssh/deploy_key
-          chmod 600 ~/.ssh/deploy_key
-          if ! ssh-keygen -y -f ~/.ssh/deploy_key >/dev/null 2>&1; then
-            echo "::error::AZURE_SSH_PRIVATE_KEY is invalid. Re-copy from: Get-Content \$env:USERPROFILE\\.ssh\\azure_vm | Set-Clipboard"
+
+          if [ -n "${SSH_PRIVATE_KEY_B64}" ]; then
+            echo "Using AZURE_SSH_PRIVATE_KEY_B64"
+            echo "$SSH_PRIVATE_KEY_B64" | tr -d ' \r\n' | base64 -d > ~/.ssh/deploy_key
+          elif [ -n "${SSH_PRIVATE_KEY}" ]; then
+            echo "Using AZURE_SSH_PRIVATE_KEY"
+            echo "$SSH_PRIVATE_KEY" | tr -d '\r' > ~/.ssh/deploy_key
+          else
+            echo "::error::Set AZURE_SSH_PRIVATE_KEY_B64 (recommended) or AZURE_SSH_PRIVATE_KEY in repository secrets."
             exit 1
           fi
-          echo "Deploy key fingerprint: $(ssh-keygen -lf ~/.ssh/deploy_key | awk '{print $2}')"
+
+          chmod 600 ~/.ssh/deploy_key
+          if ! ssh-keygen -y -f ~/.ssh/deploy_key >/dev/null 2>&1; then
+            echo "::error::SSH private key secret is invalid after decode."
+            exit 1
+          fi
+          FINGERPRINT="$(ssh-keygen -lf ~/.ssh/deploy_key | awk '{print $2}')"
+          echo "Deploy key fingerprint: ${FINGERPRINT}"
+          echo "Expected fingerprint:     SHA256:uPQKOxLKAQY/xDqwxkpHyDx92cyDt2kTMVgG3ZjdGxs"
           ssh-keyscan -H "$DEPLOY_HOST" >> ~/.ssh/known_hosts 2>/dev/null
           chmod 644 ~/.ssh/known_hosts
 
@@ -79,9 +92,7 @@ jobs:
 
           echo "Testing SSH connectivity to ${DEPLOY_USER}@${DEPLOY_HOST}..."
           if ! ssh "${SSH_OPTS[@]}" "${DEPLOY_USER}@${DEPLOY_HOST}" "echo SSH_OK"; then
-            echo "::error::SSH authentication failed (exit 255)."
-            echo "::error::Update AZURE_SSH_PRIVATE_KEY: run Get-Content \$env:USERPROFILE\\.ssh\\azure_vm | Set-Clipboard and paste into GitHub Secrets."
-            echo "::error::Expected fingerprint: SHA256:... (compare with Deploy key fingerprint above and ssh-keygen -lf ~/.ssh/azure_vm.pub locally)."
+            echo "::error::SSH authentication failed. Fingerprints must match. Prefer AZURE_SSH_PRIVATE_KEY_B64 to avoid paste corruption."
             exit 255
           fi
 
