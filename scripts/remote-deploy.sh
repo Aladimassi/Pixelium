@@ -23,6 +23,12 @@ if [[ ! -f .env ]]; then
   exit 1
 fi
 
+if [[ -f ../ensure-jwt-secret.sh ]]; then
+  bash ../ensure-jwt-secret.sh
+elif [[ -f ~/ensure-jwt-secret.sh ]]; then
+  bash ~/ensure-jwt-secret.sh
+fi
+
 echo "Starting docker compose build..."
 docker compose up -d --build
 

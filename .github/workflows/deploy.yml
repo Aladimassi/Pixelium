@@ -102,7 +102,7 @@ jobs:
             exit 255
           fi
 
-          scp "${SSH_OPTS[@]}" pixelium-deploy.tar.gz scripts/remote-deploy.sh \
+          scp "${SSH_OPTS[@]}" pixelium-deploy.tar.gz scripts/remote-deploy.sh scripts/ensure-jwt-secret.sh \
             "${DEPLOY_USER}@${DEPLOY_HOST}:/home/${DEPLOY_USER}/"
 
           ssh "${SSH_OPTS[@]}" "${DEPLOY_USER}@${DEPLOY_HOST}" \
