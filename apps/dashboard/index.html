@@ -3,8 +3,8 @@
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover" />
-  <title>Pixulium Store</title>
-  <link rel="icon" type="image/png" href="/brand/pixulium-icon.png" />
+  <title>Pixelium Store</title>
+  <link rel="icon" type="image/svg+xml" href="/brand/pixelium-icon.svg" />
   <link rel="preconnect" href="https://fonts.googleapis.com" />
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
   <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600&family=JetBrains+Mono:wght@400;500&family=Space+Grotesk:wght@400;500;600;700&display=swap" rel="stylesheet" />
@@ -48,7 +48,7 @@
       if (!root || root.querySelector('.app-boot-fallback--error')) return;
       if (root.childElementCount === 0 || root.textContent.trim() === '') {
         root.innerHTML =
-          '<div class="app-boot-fallback app-boot-fallback--error" role="alert">Unable to load Pixulium Store. Try a hard refresh (Ctrl+Shift+R) or clear site data for this domain.</div>';
+          '<div class="app-boot-fallback app-boot-fallback--error" role="alert">Unable to load Pixelium Store. Try a hard refresh (Ctrl+Shift+R) or clear site data for this domain.</div>';
       }
       console.error(event.error || event.message);
     });
@@ -56,7 +56,7 @@
 </head>
 <body class="font-body">
   <div id="root">
-    <div class="app-boot-fallback" role="status">Loading Pixulium Store…</div>
+    <div class="app-boot-fallback" role="status">Loading Pixelium Store…</div>
   </div>
   <script type="module" src="/src/client/main.tsx"></script>
 </body>

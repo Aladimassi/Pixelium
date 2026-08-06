@@ -32,11 +32,15 @@ export function useVoiceInput({ brokerUrl, value, onChange }: UseVoiceInputOptio
   }, [value]);
 
   useEffect(() => {
-    setSupported(
+    const hasMedia =
       typeof navigator !== 'undefined' &&
-        Boolean(navigator.mediaDevices?.getUserMedia) &&
-        typeof MediaRecorder !== 'undefined'
-    );
+      Boolean(navigator.mediaDevices?.getUserMedia) &&
+      typeof MediaRecorder !== 'undefined';
+    const secure = typeof window !== 'undefined' && window.isSecureContext;
+    setSupported(hasMedia && secure);
+    if (hasMedia && !secure) {
+      setError('Voice input requires HTTPS. Open the store via https:// (not http://).');
+    }
     return () => {
       if (stopTimerRef.current) window.clearTimeout(stopTimerRef.current);
       recorderRef.current?.stop();
@@ -144,10 +148,17 @@ export function useVoiceInput({ brokerUrl, value, onChange }: UseVoiceInputOptio
       stopTimerRef.current = window.setTimeout(() => {
         if (recorder.state === 'recording') recorder.stop();
       }, 12_000);
-    } catch {
+    } catch (err) {
       stopStream();
       setListening(false);
-      setError('Microphone access denied. Allow the mic in browser settings and try again.');
+      const name = err instanceof Error ? err.name : '';
+      if (name === 'NotAllowedError' || name === 'PermissionDeniedError') {
+        setError('Microphone access denied. Allow the mic in browser settings and try again.');
+      } else if (name === 'NotFoundError') {
+        setError('No microphone found. Connect a mic or type your message instead.');
+      } else {
+        setError('Could not start recording. Check mic permissions and try again.');
+      }
     }
   }, [brokerUrl, onChange, processing, stopStream]);
 

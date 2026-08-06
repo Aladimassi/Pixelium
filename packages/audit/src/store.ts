@@ -2,6 +2,7 @@ import { randomUUID } from 'node:crypto';
 import { mkdirSync, readFileSync, writeFileSync, existsSync } from 'node:fs';
 import { dirname } from 'node:path';
 import type { AuditRecord, MandateChain } from '@pixelium/shared';
+import { cartChargeTotalCents } from '@pixelium/shared';
 
 export interface OrderSummary {
   orderId: string;
@@ -87,7 +88,7 @@ export class AuditStore {
       orderId,
       userId: chain.intent.payload.userId,
       flowMode: chain.intent.payload.flowMode,
-      authorizedAmountCents: chain.cart.payload.totalCents,
+      authorizedAmountCents: cartChargeTotalCents(chain.cart),
       chargedAmountCents: status === 'matched' ? chain.payment.payload.amountCents : existing?.chargedAmountCents ?? null,
       status,
       intentSummary: chain.intent.payload.naturalLanguageIntent,
@@ -152,7 +153,26 @@ export class AuditStore {
     }
     return orders
       .sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime())
-      .map(({ mandateChainJson: _, ...summary }) => summary);
+      .map((order) => {
+        const { mandateChainJson, ...summary } = order;
+        if (mandateChainJson) {
+          try {
+            const chain = JSON.parse(mandateChainJson) as MandateChain;
+            const expected = cartChargeTotalCents(chain.cart);
+            const charged = chain.payment.payload.amountCents;
+            summary.authorizedAmountCents = expected;
+            if (charged != null) {
+              summary.chargedAmountCents = charged;
+              if (summary.status !== 'blocked') {
+                summary.status = charged === expected ? 'matched' : 'mismatch';
+              }
+            }
+          } catch {
+            /* keep stored summary */
+          }
+        }
+        return summary;
+      });
   }
 
   getOrderForUser(orderId: string, userId: string): OrderSummary | undefined {

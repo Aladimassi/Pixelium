@@ -25,6 +25,6 @@ try {
   );
 } catch (err) {
   const message = err instanceof Error ? err.message : 'Failed to start the store UI';
-  showBootError(`Unable to load Pixulium Store. ${message}`);
+  showBootError(`Unable to load Pixelium Store. ${message}`);
   console.error(err);
 }

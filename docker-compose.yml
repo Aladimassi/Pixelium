@@ -39,6 +39,12 @@ services:
       ECOMMERCE_URL: http://product-agent:4001
       PAYMENT_URL: http://payment-agent:4002
       AUDIT_DB_PATH: /data/audit.json
+      PUBLIC_APP_URL: ${PUBLIC_APP_URL:-${PUBLIC_URL:-http://localhost:3000}}
+      SMTP_HOST: ${SMTP_HOST:-}
+      SMTP_PORT: ${SMTP_PORT:-587}
+      SMTP_USER: ${SMTP_USER:-}
+      SMTP_PASS: ${SMTP_PASS:-}
+      SMTP_FROM: ${SMTP_FROM:-Pixelium Store <noreply@pixelium.com>}
     volumes:
       - broker_data:/data
     depends_on:

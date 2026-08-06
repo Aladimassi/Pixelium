@@ -6,8 +6,11 @@ export function useDialog(open: boolean): React.RefObject<HTMLDialogElement | nu
   useEffect(() => {
     const dialog = ref.current;
     if (!dialog) return;
-    if (open && !dialog.open) dialog.showModal();
-    else if (!open && dialog.open) dialog.close();
+    if (open) {
+      if (!dialog.open) dialog.showModal();
+    } else if (dialog.open) {
+      dialog.close();
+    }
   }, [open]);
 
   return ref;

@@ -39,7 +39,11 @@ interface CheckoutModalProps {
   successTxn?: string;
   successOrderId?: string;
   successDelivery?: string;
+  successDeliveryEta?: string;
   successItems?: PaidItem[];
+  successEmailSent?: boolean;
+  successEmailError?: string;
+  userEmail?: string;
   productsBySku?: Record<string, Product>;
   successMethod?: string;
   processingMessage: string;
@@ -51,7 +55,9 @@ interface CheckoutModalProps {
   onShippingChange: (addr: ShippingAddress) => void;
   onDeliveryChange: (option: DeliveryOption) => void;
   onContinueToReview: () => void;
+  onBackToDelivery?: () => void;
   onEditDelivery?: () => void;
+  onDownloadReceipt?: () => void;
 }
 
 export function CheckoutModal({
@@ -70,7 +76,11 @@ export function CheckoutModal({
   successTxn,
   successOrderId,
   successDelivery,
+  successDeliveryEta,
   successItems = [],
+  successEmailSent = false,
+  successEmailError,
+  userEmail,
   productsBySku = {},
   successMethod,
   processingMessage,
@@ -82,7 +92,9 @@ export function CheckoutModal({
   onShippingChange,
   onDeliveryChange,
   onContinueToReview,
+  onBackToDelivery,
   onEditDelivery,
+  onDownloadReceipt,
 }: CheckoutModalProps) {
   const dialogRef = useDialog(open);
   const [localAddr, setLocalAddr] = useState(shippingAddress);
@@ -128,14 +140,7 @@ export function CheckoutModal({
           >
             {usingSavedAddress ? (
               <p className="saved-address-banner" role="status">
-                Using your saved delivery address —{' '}
-                {onEditDelivery ? (
-                  <button type="button" className="btn-link" onClick={onEditDelivery}>
-                    edit in Profile
-                  </button>
-                ) : (
-                  'you can update it below'
-                )}
+                Using your saved delivery address — update the fields below if needed.
               </p>
             ) : (
               <p className="hint profile-field-hint">
@@ -199,6 +204,11 @@ export function CheckoutModal({
           </p>
           {statusMessage ? <p className="checkout-status">{statusMessage}</p> : null}
           <div className="consent-actions">
+            {onBackToDelivery ? (
+              <button type="button" className="btn-ghost btn-full" onClick={onBackToDelivery}>
+                ← Edit delivery
+              </button>
+            ) : null}
             <button type="button" className="btn-primary btn-full" disabled={!canPay} onClick={onConfirmPay}>
               Pay now →
             </button>
@@ -261,8 +271,22 @@ export function CheckoutModal({
             ) : null}
             <p className="pay-total-label">{successAmount}</p>
             <p className="mandate-id">{successTxn}</p>
+            {successEmailSent && userEmail ? (
+              <p className="form-success pay-success__email" role="status">
+                We emailed your purchase to {userEmail} — check what you bought.
+              </p>
+            ) : successEmailError ? (
+              <p className="form-error pay-success__email" role="alert">
+                Payment succeeded but we could not email your receipt: {successEmailError}
+              </p>
+            ) : null}
             <p className="hint">{successMethod ?? (savedCard ? cardDisplayLine(savedCard) : '')}</p>
-            <p className="hint">Estimated delivery in 3–5 business days.</p>
+            <p className="hint">{successDeliveryEta ?? 'Estimated delivery in 3–5 business days.'}</p>
+            {onDownloadReceipt ? (
+              <button type="button" className="btn-secondary btn-full" onClick={onDownloadReceipt}>
+                Download receipt (PDF) ↓
+              </button>
+            ) : null}
             <button type="button" className="btn-primary btn-full" onClick={onClose}>
               Continue shopping →
             </button>

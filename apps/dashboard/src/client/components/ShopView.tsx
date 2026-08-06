@@ -1,3 +1,4 @@
+import { useEffect, useRef } from 'react';
 import type { Product } from '../lib/cart';
 import { formatPrice, handleProductImageError, productImageUrl } from '../lib/cart';
 import { formatCategoryLabel } from '../lib/product-meta';
@@ -277,6 +278,11 @@ export function StoreHeader({
   searchQuery,
   onSearchQueryChange,
   onSearchSubmit,
+  searchResults = [],
+  searchLoading = false,
+  appliedSearchQuery = '',
+  onSearchPick,
+  onSearchViewAll,
   onNavHome,
   onNavShop,
   onNavAssistant,
@@ -285,6 +291,9 @@ export function StoreHeader({
   onProfile,
   onLogout,
   onLogoHome,
+  isGuest = false,
+  onSignIn,
+  onSearchDismiss,
 }: {
   view: AppView;
   cartCount: number;
@@ -292,6 +301,11 @@ export function StoreHeader({
   searchQuery: string;
   onSearchQueryChange: (q: string) => void;
   onSearchSubmit: () => void;
+  searchResults?: Product[];
+  searchLoading?: boolean;
+  appliedSearchQuery?: string;
+  onSearchPick?: (sku: string) => void;
+  onSearchViewAll?: () => void;
   onNavHome: () => void;
   onNavShop: () => void;
   onNavAssistant: () => void;
@@ -300,8 +314,26 @@ export function StoreHeader({
   onProfile: () => void;
   onLogout: () => void;
   onLogoHome: () => void;
+  isGuest?: boolean;
+  onSignIn?: () => void;
+  onSearchDismiss?: () => void;
 }) {
-  const showSearch = view === 'home' || view === 'shop';
+  const searchWrapRef = useRef<HTMLDivElement>(null);
+  const showSearch = true;
+  const q = searchQuery.trim();
+  const searchPending = q.length >= 2 && q !== appliedSearchQuery.trim();
+  const showDropdown = showSearch && searchPending;
+
+  useEffect(() => {
+    if (!showDropdown || !onSearchDismiss) return;
+    const onDocClick = (e: MouseEvent) => {
+      if (!searchWrapRef.current?.contains(e.target as Node)) {
+        onSearchDismiss();
+      }
+    };
+    document.addEventListener('mousedown', onDocClick);
+    return () => document.removeEventListener('mousedown', onDocClick);
+  }, [showDropdown, onSearchDismiss]);
 
   return (
     <header className="store-header">
@@ -310,27 +342,75 @@ export function StoreHeader({
           <BrandLogo size="sm" />
         </a>
 
-        <form
-          id="search-form"
-          className={`search-bar${showSearch ? '' : ' hidden'}`}
-          role="search"
-          onSubmit={(e) => {
-            e.preventDefault();
-            onSearchSubmit();
-          }}
-        >
-          <span className="search-bar__icon" aria-hidden="true">
-            ⌕
-          </span>
-          <input
-            type="search"
-            id="search-input"
-            placeholder="Search products…"
-            aria-label="Search products"
-            value={searchQuery}
-            onChange={(e) => onSearchQueryChange(e.target.value)}
-          />
-        </form>
+        <div className="search-bar-wrap" ref={searchWrapRef}>
+          <form
+            id="search-form"
+            className={`search-bar${showSearch ? '' : ' hidden'}`}
+            role="search"
+            onSubmit={(e) => {
+              e.preventDefault();
+              onSearchSubmit();
+            }}
+          >
+            <span className="search-bar__icon" aria-hidden="true">
+              ⌕
+            </span>
+            <input
+              type="search"
+              id="search-input"
+              placeholder="Search products…"
+              aria-label="Search products"
+              aria-expanded={showDropdown}
+              aria-controls="search-suggestions"
+              autoComplete="off"
+              value={searchQuery}
+              onChange={(e) => onSearchQueryChange(e.target.value)}
+            />
+          </form>
+
+          {showDropdown ? (
+            <div id="search-suggestions" className="search-dropdown" role="listbox" aria-label="Search suggestions">
+              {searchLoading ? (
+                <p className="search-dropdown__status">Searching…</p>
+              ) : searchResults.length === 0 ? (
+                <p className="search-dropdown__status">No products found</p>
+              ) : (
+                <>
+                  <ul className="search-dropdown__list">
+                    {searchResults.map((product) => (
+                      <li key={product.sku}>
+                        <button
+                          type="button"
+                          className="search-dropdown__item"
+                          role="option"
+                          onClick={() => onSearchPick?.(product.sku)}
+                        >
+                          <img
+                            className="search-dropdown__thumb"
+                            src={productImageUrl(product)}
+                            alt=""
+                            loading="lazy"
+                            data-sku={product.sku}
+                            onError={handleProductImageError}
+                          />
+                          <span className="search-dropdown__info">
+                            <span className="search-dropdown__name">{product.name}</span>
+                            <span className="search-dropdown__meta">
+                              {formatCategoryLabel(product.category)} · {formatPrice(product.priceCents)}
+                            </span>
+                          </span>
+                        </button>
+                      </li>
+                    ))}
+                  </ul>
+                  <button type="button" className="search-dropdown__all" onClick={onSearchViewAll}>
+                    View all results for “{searchQuery.trim()}”
+                  </button>
+                </>
+              )}
+            </div>
+          ) : null}
+        </div>
 
         <div className="store-header__actions">
           <nav className="store-nav" aria-label="Store sections">
@@ -341,7 +421,8 @@ export function StoreHeader({
               aria-current={view === 'home' ? 'page' : undefined}
               onClick={onNavHome}
             >
-              Home
+              <span className="nav-link__full">Home</span>
+              <span className="nav-link__short" aria-hidden="true">Home</span>
             </button>
             <button
               type="button"
@@ -350,7 +431,8 @@ export function StoreHeader({
               aria-current={view === 'shop' ? 'page' : undefined}
               onClick={onNavShop}
             >
-              Shop
+              <span className="nav-link__full">Shop</span>
+              <span className="nav-link__short" aria-hidden="true">Shop</span>
             </button>
             <button
               type="button"
@@ -359,7 +441,8 @@ export function StoreHeader({
               aria-current={view === 'assistant' ? 'page' : undefined}
               onClick={onNavAssistant}
             >
-              Assistant
+              <span className="nav-link__full">Assistant</span>
+              <span className="nav-link__short" aria-hidden="true">AI</span>
             </button>
             <button
               type="button"
@@ -368,26 +451,36 @@ export function StoreHeader({
               aria-current={view === 'orders' ? 'page' : undefined}
               onClick={onNavOrders}
             >
-              Orders
+              <span className="nav-link__full">Orders</span>
+              <span className="nav-link__short" aria-hidden="true">Orders</span>
             </button>
           </nav>
 
           <button type="button" id="btn-cart" className="btn-secondary btn-cart" onClick={onCart}>
-            <span className="btn-cart__label">Cart</span>
+            <span className="btn-cart__label btn-cart__label--full">Cart</span>
+            <span className="btn-cart__label btn-cart__label--short" aria-hidden="true">Cart</span>
             <span id="cart-count" className="cart-badge">
               {cartCount}
             </span>
           </button>
 
-          <button type="button" id="btn-profile" className="account-chip" aria-label="Open profile" onClick={onProfile}>
-            <span id="user-greeting" className="account-chip__user">
-              {userGreeting}
-            </span>
-          </button>
+          {isGuest ? (
+            <button type="button" id="btn-sign-in" className="btn-secondary btn-sm" onClick={onSignIn}>
+              Sign in
+            </button>
+          ) : (
+            <>
+              <button type="button" id="btn-profile" className="account-chip" aria-label="Open profile" onClick={onProfile}>
+                <span id="user-greeting" className="account-chip__user">
+                  {userGreeting}
+                </span>
+              </button>
 
-          <button type="button" id="btn-logout" className="btn-logout" aria-label="Sign out" title="Sign out" onClick={onLogout}>
-            <span aria-hidden="true">↩</span>
-          </button>
+              <button type="button" id="btn-logout" className="btn-logout" aria-label="Sign out" title="Sign out" onClick={onLogout}>
+                <span aria-hidden="true">↩</span>
+              </button>
+            </>
+          )}
         </div>
       </div>
     </header>

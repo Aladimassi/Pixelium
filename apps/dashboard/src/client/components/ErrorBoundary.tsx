@@ -16,7 +16,7 @@ export class ErrorBoundary extends Component<Props, State> {
   }
 
   componentDidCatch(error: Error, info: ErrorInfo): void {
-    console.error('Pixulium UI error', error, info);
+    console.error('Pixelium UI error', error, info);
   }
 
   render() {

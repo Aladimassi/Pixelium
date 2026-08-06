@@ -4,8 +4,10 @@ import {
   createMandate,
   getProduct,
   validateMandateChain,
+  cartChargeTotalCents,
   type CartLineItem,
   type CartMandate,
+  type CartMandatePayload,
   type FlowMode,
   type IntentMandate,
   type IntentMandatePayload,
@@ -110,6 +112,65 @@ function buildCartLocally(
   return { cartMandate: cartMandate as CartMandate };
 }
 
+/** Attach shipping to a signed cart mandate (re-signs with updated payload). */
+export function applyShippingToCart(cartMandate: CartMandate, shippingCents: number): CartMandate {
+  const normalized = Math.max(0, Math.round(shippingCents));
+  if ((cartMandate.payload.shippingCents ?? 0) === normalized) {
+    return cartMandate;
+  }
+  const payload: CartMandatePayload = {
+    ...cartMandate.payload,
+    shippingCents: normalized,
+  };
+  return createMandate(
+    'cart',
+    cartMandate.signerId,
+    payload,
+    cartMandate.expiresAt,
+    cartMandate.parentMandateId,
+  ) as CartMandate;
+}
+
+function rebindCartToIntent(cartMandate: CartMandate, intentMandate: IntentMandate): CartMandate {
+  const payload: CartMandatePayload = {
+    ...cartMandate.payload,
+    intentMandateId: intentMandate.id,
+  };
+  return createMandate(
+    'cart',
+    cartMandate.signerId,
+    payload,
+    cartMandate.expiresAt,
+    intentMandate.id,
+  ) as CartMandate;
+}
+
+/** Apply shipping and raise intent ceiling when needed before payment. */
+export function preparePaymentChain(
+  intentMandate: IntentMandate,
+  cartMandate: CartMandate,
+  shippingCents: number,
+  last4 = '4242',
+): { intent: IntentMandate; cart: CartMandate; payment: PaymentMandate } {
+  let intent = intentMandate;
+  let cart =
+    shippingCents > 0 ? applyShippingToCart(cartMandate, shippingCents) : cartMandate;
+  const chargeTotal = cartChargeTotalCents(cart);
+
+  if (chargeTotal > intent.payload.conditions.maxPriceCents) {
+    intent = createIntentMandate(
+      intent.payload.flowMode,
+      intent.payload.naturalLanguageIntent,
+      { ...intent.payload.conditions, maxPriceCents: chargeTotal },
+      intent.payload.userId,
+    );
+    cart = rebindCartToIntent(cart, intent);
+  }
+
+  const payment = createPaymentMandate(intent, cart, last4);
+  return { intent, cart, payment };
+}
+
 export async function buildCart(
   intentMandate: IntentMandate,
   items: Array<{ sku: string; quantity: number }>
@@ -183,7 +244,7 @@ export function createPaymentMandate(
     paymentId: randomUUID(),
     cartMandateId: cartMandate.id,
     intentMandateId: intentMandate.id,
-    amountCents: cartMandate.payload.totalCents,
+    amountCents: cartChargeTotalCents(cartMandate),
     currency: 'USD',
     paymentMethod: 'mock_card',
     last4,
@@ -255,7 +316,7 @@ export async function submitPayment(chain: MandateChain): Promise<BrokerResult> 
     auditStore.markPaymentProcessed(
       chain.payment.payload.paymentId,
       paymentResult.amountCents,
-      chain.cart.payload.totalCents
+      cartChargeTotalCents(chain.cart)
     );
     auditStore.logEvent(
       'payment_processed',

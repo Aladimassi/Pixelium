@@ -7,7 +7,7 @@ export function SiteFooter({ onAdmin }: SiteFooterProps) {
     <footer className="site-footer">
       <div className="container site-footer__grid">
         <div className="site-footer__brand">
-          <strong>Pixulium</strong>
+          <strong>Pixelium</strong>
           <p className="hint">Secure checkout with explicit approval on every purchase.</p>
         </div>
         <div>
@@ -16,7 +16,7 @@ export function SiteFooter({ onAdmin }: SiteFooterProps) {
             <li>New arrivals</li>
             <li>Electronics</li>
             <li>Footwear</li>
-            <li>Free shipping over €50</li>
+            <li>Free shipping over $50</li>
           </ul>
         </div>
         <div>
@@ -38,7 +38,7 @@ export function SiteFooter({ onAdmin }: SiteFooterProps) {
         </div>
       </div>
       <div className="container site-footer__bar">
-        <p>© {new Date().getFullYear()} Pixulium Store · All prices include VAT where applicable</p>
+        <p>© {new Date().getFullYear()} Pixelium Store · Prices in USD · Tax calculated at checkout</p>
         {onAdmin ? (
           <button type="button" id="btn-admin" className="btn-ghost btn-sm" onClick={onAdmin}>
             Audit console

@@ -6,7 +6,7 @@ import type { AiChatTurn } from './ShopView';
 
 const STARTER_PROMPTS = [
   'Recommend running shoes for winter',
-  'What headphones do you have under €200?',
+  'What headphones do you have under $200?',
   'I need a gift for someone who loves coffee',
 ];
 
@@ -218,6 +218,10 @@ export function AssistantView({
             <p className="ai-voice-status" aria-live="polite">
               <span className="ai-voice-status__dot" aria-hidden="true" />
               Recording… tap again when done
+            </p>
+          ) : !voice.supported ? (
+            <p className="hint ai-voice-hint" role="status">
+              Voice input needs HTTPS and a microphone — type your message above instead.
             </p>
           ) : null}
           {voice.error ? (

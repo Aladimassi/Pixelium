@@ -48,6 +48,8 @@ export interface CartMandatePayload {
   subtotalCents: number;
   taxCents: number;
   totalCents: number;
+  /** Shipping charged at checkout (not included in totalCents). */
+  shippingCents?: number;
   currency: 'USD';
   intentMandateId: string;
 }

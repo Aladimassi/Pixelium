@@ -14,6 +14,11 @@ export interface ValidationResult {
   errors: string[];
 }
 
+/** Amount charged to the customer (items + tax + shipping). */
+export function cartChargeTotalCents(cart: CartMandate): number {
+  return cart.payload.totalCents + (cart.payload.shippingCents ?? 0);
+}
+
 export function validateIntentAgainstConditions(
   intent: IntentMandate,
   cartTotalCents: number,
@@ -75,18 +80,15 @@ export function validateMandateChain(chain: MandateChain): ValidationResult {
   if (payment.payload.intentMandateId !== intent.id) {
     errors.push('Payment payload intentMandateId mismatch');
   }
-  if (payment.payload.amountCents !== cart.payload.totalCents) {
+  const chargeTotal = cartChargeTotalCents(cart);
+  if (payment.payload.amountCents !== chargeTotal) {
     errors.push(
-      `Payment amount ${payment.payload.amountCents} does not match cart total ${cart.payload.totalCents}`
+      `Payment amount ${payment.payload.amountCents} does not match cart total ${chargeTotal}`
     );
   }
 
   const skuList = cart.payload.items.map((i) => i.sku);
-  const conditionCheck = validateIntentAgainstConditions(
-    intent,
-    cart.payload.totalCents,
-    skuList
-  );
+  const conditionCheck = validateIntentAgainstConditions(intent, chargeTotal, skuList);
   errors.push(...conditionCheck.errors);
 
   return { valid: errors.length === 0, errors };
@@ -98,7 +100,7 @@ export function summarizeChain(chain: MandateChain): string {
     .join(', ');
   return [
     `Intent (${chain.intent.payload.flowMode}): ${chain.intent.payload.naturalLanguageIntent}`,
-    `Cart: ${items} — $${(chain.cart.payload.totalCents / 100).toFixed(2)}`,
+    `Cart: ${items} — $${(cartChargeTotalCents(chain.cart) / 100).toFixed(2)}`,
     `Payment: $${(chain.payment.payload.amountCents / 100).toFixed(2)} via ****${chain.payment.payload.last4}`,
   ].join('\n');
 }

@@ -21,13 +21,34 @@ const SHOPPING_SIGNAL =
 export const ADVISORY_SIGNAL =
   /\b(recommend|reccommend|reccomend|suggest|what should|what do you|what would you|what to (buy|get)|help me (choose|pick|find|decide)|best (gift|option)|compare|which (one|product|would)|gift for|ideas for|shopping list|personal shopper|advice|show me)\b/i;
 
+/** Catalog SKU pattern, e.g. LAMP-DESK-LED */
+const SKU_PATTERN = /\b([A-Z][A-Z0-9]*(?:-[A-Z0-9]+)+)\b/;
+
+/** Pull an exact catalog SKU from the message when present. */
+export function extractExplicitSku(message: string): string | null {
+  const matches = message.match(new RegExp(SKU_PATTERN.source, 'gi')) ?? [];
+  for (const raw of matches) {
+    const sku = raw.toUpperCase();
+    if (getProduct(sku)) return sku;
+  }
+  return null;
+}
+
+function extractQuantity(message: string): number {
+  const m = message.match(/\b(?:qty|quantity|x)\s*[:.]?\s*(\d{1,2})\b/i);
+  if (m) return Math.max(1, Math.min(99, Number(m[1])));
+  return 1;
+}
+
 /** User wants to complete a purchase — route chat to checkout preparation. */
 export function isPurchaseIntentMessage(message: string): boolean {
   const text = message.trim();
   if (!text) return false;
 
+  if (extractExplicitSku(text)) return true;
+
   // Recommendation / exploration — suggest products, do not checkout.
-  if (isAdvisoryMessage(text)) return false;
+  if (isAdvisoryMessage(text) && !/\b(buy|purchase|order|checkout|add to cart)\b/i.test(text)) return false;
 
   const hasBuyVerb = /\b(buy|purchase|order|checkout|i('ll| will) take|add to cart)\b/i.test(text);
 
@@ -83,7 +104,28 @@ export function isPurchaseIntentMessage(message: string): boolean {
     }
   }
 
+  // Trailing purchase intent: "laptop under $500 … purchase (it)"
+  if (/\b(buy|purchase|order)\b/i.test(text) && SHOPPING_SIGNAL.test(text)) {
+    return true;
+  }
+
   return false;
+}
+
+function parseIntentFromExplicitSku(message: string, sku: string): ParsedPurchaseIntent {
+  const product = getProduct(sku)!;
+  const quantity = Math.min(extractQuantity(message), product.inStock || 1);
+  const maxPriceCents = resolveMaxPriceCents(message, product.priceCents, quantity);
+  const delegated = /\b(later|away|automatic|delegate|without me|not present)\b/i.test(message);
+  return {
+    sku: product.sku,
+    quantity,
+    maxPriceCents,
+    flowMode: delegated ? 'delegated' : 'realtime',
+    naturalLanguageIntent: message.trim(),
+    aiSummary: `Matched SKU ${product.sku} — ${product.name}`,
+    usedGroq: false,
+  };
 }
 
 export function isAdvisoryMessage(message: string): boolean {
@@ -495,6 +537,11 @@ export async function parseShoppingIntent(message: string): Promise<ParsedPurcha
   const trimmed = message.trim();
   if (!trimmed) {
     throw new Error('Message is required');
+  }
+
+  const explicitSku = extractExplicitSku(trimmed);
+  if (explicitSku) {
+    return parseIntentFromExplicitSku(trimmed, explicitSku);
   }
 
   if (isConversationalMessage(trimmed)) {

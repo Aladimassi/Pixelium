@@ -3,9 +3,11 @@ import express from 'express';
 import cors from 'cors';
 import {
   auditStore,
+  applyShippingToCart,
   buildCart,
   createIntentMandate,
   createPaymentMandate,
+  preparePaymentChain,
   runDelegatedPurchase,
   runRealtimePurchase,
   submitPayment,
@@ -35,9 +37,13 @@ import {
   createAuthMiddleware,
   optionalAuth,
   updateUserProfile,
+  changeUserPassword,
+  requestPasswordReset,
+  resetPasswordWithToken,
   type AuthRequest,
 } from '@pixelium/auth';
 import { initCatalog, getProductStore } from '@pixelium/catalog';
+import { isMailConfigured, publicAppUrl, sendPasswordResetEmail, trySendPurchaseReceiptEmail } from './mail.js';
 
 const PORT = Number(process.env.BROKER_PORT ?? 4000);
 
@@ -259,6 +265,87 @@ app.post('/api/auth/register', async (req, res) => {
   }
 });
 
+const PASSWORD_RESET_SENT =
+  'If an account exists for that email, we sent password reset instructions. Check your inbox.';
+
+async function attachPurchaseReceiptEmail(
+  result: Awaited<ReturnType<typeof submitPayment>>,
+  user: { email: string; displayName?: string },
+  receipt?: {
+    shippingSummary?: string;
+    shippingCents?: number;
+    deliveryLabel?: string;
+    sendEmail?: boolean;
+  },
+): Promise<{ emailSent: boolean; emailError?: string }> {
+  if (!result.success || !result.chain || receipt?.sendEmail === false) {
+    return { emailSent: false };
+  }
+  const transactionId =
+    result.payment?.transactionId ?? result.chain.payment.payload.paymentId ?? '';
+  const { sent, error } = await trySendPurchaseReceiptEmail(
+    user.email,
+    user.displayName,
+    result.chain,
+    transactionId,
+    receipt,
+  );
+  return { emailSent: sent, emailError: error };
+}
+
+app.post('/api/auth/forgot-password', async (req, res) => {
+  try {
+    if (!isAuthReady()) return authUnavailable(res);
+    const { email } = req.body;
+    if (!email?.trim()) {
+      return res.status(400).json({ error: 'Email required' });
+    }
+    const normalized = String(email).trim().toLowerCase();
+    const token = await requestPasswordReset(normalized);
+    let emailSent = false;
+    let emailError: string | undefined;
+    if (token) {
+      const resetUrl = `${publicAppUrl()}/reset-password?token=${encodeURIComponent(token)}`;
+      if (isMailConfigured()) {
+        try {
+          await sendPasswordResetEmail(normalized, resetUrl);
+          emailSent = true;
+        } catch (err) {
+          emailError = err instanceof Error ? err.message : 'Could not send email';
+          console.error('[password-reset]', emailError);
+        }
+      } else {
+        emailError = 'Email delivery is not configured on the server.';
+        if (process.env.NODE_ENV !== 'production') {
+          console.info('[password-reset] SMTP not configured. Reset link:', resetUrl);
+        }
+      }
+    }
+    res.json({ message: PASSWORD_RESET_SENT, emailSent, emailError });
+  } catch (err) {
+    const message = err instanceof Error ? err.message : 'Request failed';
+    if (message.includes('Auth not initialized')) return authUnavailable(res);
+    res.status(400).json({ error: message });
+  }
+});
+
+app.post('/api/auth/reset-password', async (req, res) => {
+  try {
+    if (!isAuthReady()) return authUnavailable(res);
+    const { token, password } = req.body;
+    if (!token?.trim() || !password) {
+      return res.status(400).json({ error: 'Reset token and new password required' });
+    }
+    if (String(password).length < 6) {
+      return res.status(400).json({ error: 'Password must be at least 6 characters' });
+    }
+    await resetPasswordWithToken(String(token).trim(), String(password));
+    res.json({ message: 'Password updated. You can sign in now.' });
+  } catch (err) {
+    res.status(400).json({ error: err instanceof Error ? err.message : 'Reset failed' });
+  }
+});
+
 app.get('/api/catalog/categories', async (_req, res) => {
   try {
     const store = getProductStore();
@@ -358,6 +445,26 @@ function createRequireAuth(userStore: ReturnType<typeof getUserStore> | null) {
   return createAuthMiddleware(userStore);
 }
 
+const DEMO_ADMIN_EMAIL = 'demo@pixelium.com';
+
+function isAdminUser(email: string): boolean {
+  const normalized = email.trim().toLowerCase();
+  if (normalized === DEMO_ADMIN_EMAIL) return true;
+  const extra = (process.env.ADMIN_EMAILS ?? '')
+    .split(',')
+    .map((e) => e.trim().toLowerCase())
+    .filter(Boolean);
+  return extra.includes(normalized);
+}
+
+function requireAdmin(req: AuthRequest, res: express.Response): boolean {
+  if (!isAdminUser(req.user!.email)) {
+    res.status(403).json({ error: 'Admin access only' });
+    return false;
+  }
+  return true;
+}
+
 function registerProtectedRoutes(requireAuth: ReturnType<typeof createRequireAuth>) {
   app.get('/api/auth/me', requireAuth, (req, res) => {
     const { user } = req as AuthRequest;
@@ -375,6 +482,23 @@ function registerProtectedRoutes(requireAuth: ReturnType<typeof createRequireAut
       res.json(result);
     } catch (err) {
       res.status(400).json({ error: err instanceof Error ? err.message : 'Update failed' });
+    }
+  });
+
+  app.post('/api/auth/change-password', requireAuth, async (req, res) => {
+    try {
+      const { user } = req as AuthRequest;
+      const { currentPassword, newPassword } = req.body;
+      if (!currentPassword || !newPassword) {
+        return res.status(400).json({ error: 'Current and new password required' });
+      }
+      if (String(newPassword).length < 6) {
+        return res.status(400).json({ error: 'New password must be at least 6 characters' });
+      }
+      await changeUserPassword(user!.id, String(currentPassword), String(newPassword));
+      res.json({ message: 'Password updated' });
+    } catch (err) {
+      res.status(400).json({ error: err instanceof Error ? err.message : 'Password change failed' });
     }
   });
 
@@ -435,7 +559,7 @@ function registerProtectedRoutes(requireAuth: ReturnType<typeof createRequireAut
         }
       }
 
-      if (isPurchaseIntentMessage(text) && !isAdvisoryMessage(text)) {
+      if (isPurchaseIntentMessage(text)) {
         try {
           const prepared = await prepareAiPurchase(text, user!.id, prior);
           return res.json({
@@ -582,19 +706,23 @@ function registerProtectedRoutes(requireAuth: ReturnType<typeof createRequireAut
   });
 
   app.post('/api/payment-mandate', requireAuth, (req, res) => {
-    const { intentMandate, cartMandate, last4 } = req.body;
-    const mandate = createPaymentMandate(intentMandate, cartMandate, last4);
-    res.json({ paymentMandate: mandate });
+    const { intentMandate, cartMandate, last4, shippingCents = 0 } = req.body;
+    const chain = preparePaymentChain(intentMandate, cartMandate, Number(shippingCents) || 0, last4);
+    res.json({ paymentMandate: chain.payment, cartMandate: chain.cart, intentMandate: chain.intent });
   });
 
   app.post('/api/submit', requireAuth, async (req, res) => {
     const { user } = req as AuthRequest;
     const chain = req.body.mandateChain as MandateChain;
+    const receipt = req.body.receipt as
+      | { shippingSummary?: string; shippingCents?: number; deliveryLabel?: string }
+      | undefined;
     if (chain.intent.payload.userId !== user!.id) {
       return res.status(403).json({ error: 'Mandate does not belong to this account' });
     }
     const result = await submitPayment(chain);
-    res.status(result.success ? 200 : 403).json(result);
+    const { emailSent, emailError } = await attachPurchaseReceiptEmail(result, user!, receipt);
+    res.status(result.success ? 200 : 403).json({ ...result, emailSent, emailError });
   });
 
   app.post('/api/validate', requireAuth, (req, res) => {
@@ -604,9 +732,10 @@ function registerProtectedRoutes(requireAuth: ReturnType<typeof createRequireAut
 
   app.post('/api/checkout/prepare', requireAuth, async (req, res) => {
     const { user } = req as AuthRequest;
-    const { items, intentText } = req.body as {
+    const { items, intentText, shippingCents = 0 } = req.body as {
       items: Array<{ sku: string; quantity: number }>;
       intentText?: string;
+      shippingCents?: number;
     };
     if (!items?.length) {
       return res.status(400).json({ error: 'Cart is empty' });
@@ -623,7 +752,8 @@ function registerProtectedRoutes(requireAuth: ReturnType<typeof createRequireAut
       }
       subtotalCents += product.priceCents * item.quantity;
     }
-    const maxPriceCents = subtotalCents + computeTax(subtotalCents);
+    const ship = Math.max(0, Math.round(Number(shippingCents) || 0));
+    const maxPriceCents = subtotalCents + computeTax(subtotalCents) + ship;
     const validUntil = new Date(Date.now() + 60 * 60 * 1000).toISOString();
     const text =
       intentText ??
@@ -634,9 +764,10 @@ function registerProtectedRoutes(requireAuth: ReturnType<typeof createRequireAut
     if ('error' in cartResult) {
       return res.status(400).json({ error: cartResult.error });
     }
+    const cartMandate = ship > 0 ? applyShippingToCart(cartResult.cartMandate, ship) : cartResult.cartMandate;
     res.json({
       intentMandate: intent,
-      cartMandate: cartResult.cartMandate,
+      cartMandate,
       agentThinking: cartResult.agentThinking,
       agentWarnings: cartResult.agentWarnings,
     });
@@ -679,18 +810,23 @@ function registerProtectedRoutes(requireAuth: ReturnType<typeof createRequireAut
       cart: cartResult.cartMandate,
       payment,
     });
-    res.status(result.success ? 200 : 403).json(result);
+    const { emailSent, emailError } = await attachPurchaseReceiptEmail(result, user!);
+    res.status(result.success ? 200 : 403).json({ ...result, emailSent, emailError });
   });
 
   app.post('/api/demo/realtime', requireAuth, async (req, res) => {
-    const { user } = req as AuthRequest;
+    const authReq = req as AuthRequest;
+    if (!requireAdmin(authReq, res)) return;
+    const { user } = authReq;
     const { items, maxPriceCents, intentText } = req.body;
     const result = await runRealtimePurchase(items, maxPriceCents, intentText, user!.id);
     res.status(result.success ? 200 : 403).json(result);
   });
 
   app.post('/api/demo/delegated', requireAuth, async (req, res) => {
-    const { user } = req as AuthRequest;
+    const authReq = req as AuthRequest;
+    if (!requireAdmin(authReq, res)) return;
+    const { user } = authReq;
     const { items, conditions, intentText } = req.body;
     const result = await runDelegatedPurchase(items, conditions, intentText, user!.id);
     res.status(result.success ? 200 : 403).json(result);
@@ -731,6 +867,8 @@ function registerProtectedRoutes(requireAuth: ReturnType<typeof createRequireAut
   });
 
   app.get('/api/audit/events', requireAuth, (req, res) => {
+    const { user } = req as AuthRequest;
+    if (!requireAdmin(req as AuthRequest, res)) return;
     const limit = Number(req.query.limit ?? 100);
     res.json({ events: auditStore.listEvents(limit) });
   });

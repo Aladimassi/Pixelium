@@ -4,6 +4,9 @@ import { productImageFallbackUrl, resolveProductImageUrl } from '@pixelium/share
 const CART_KEY = 'pixelium_cart';
 const LEGACY_CART_KEY = 'pixelium_cart';
 
+/** LocalStorage key for guest (unauthenticated) carts. */
+export const GUEST_CART_USER_ID = '__guest__';
+
 export interface CartItem {
   sku: string;
   quantity: number;
@@ -24,7 +27,25 @@ function cartKey(userId?: string): string | null {
   return `${CART_KEY}_${userId}`;
 }
 
-/** Drop old shared cart key from before per-user carts. */
+/** Migrate legacy shared cart into a user cart, then remove the old key. */
+export function migrateLegacySharedCart(userId: string): void {
+  try {
+    const legacy = localStorage.getItem(LEGACY_CART_KEY);
+    if (!legacy) return;
+    const existing = loadCart(userId);
+    if (existing.length === 0) {
+      const parsed = JSON.parse(legacy) as CartItem[];
+      if (Array.isArray(parsed) && parsed.length) {
+        saveCart(userId, parsed);
+      }
+    }
+    localStorage.removeItem(LEGACY_CART_KEY);
+  } catch {
+    /* ignore */
+  }
+}
+
+/** @deprecated use migrateLegacySharedCart */
 export function discardLegacySharedCart(): void {
   try {
     localStorage.removeItem(LEGACY_CART_KEY);

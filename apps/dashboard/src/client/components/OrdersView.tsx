@@ -11,9 +11,12 @@ export interface Order {
 interface OrdersViewProps {
   orders: Order[];
   loading: boolean;
+  loadError?: string;
+  onDownloadReceipt?: (orderId: string) => void;
+  downloadingOrderId?: string | null;
 }
 
-export function OrdersView({ orders, loading }: OrdersViewProps) {
+export function OrdersView({ orders, loading, loadError, onDownloadReceipt, downloadingOrderId }: OrdersViewProps) {
   return (
     <div id="orders-view" className="page-view">
       <section className="section section--inverted">
@@ -31,13 +34,19 @@ export function OrdersView({ orders, loading }: OrdersViewProps) {
                   <th>Items</th>
                   <th>Charged</th>
                   <th>Status</th>
-                  <th></th>
+                  <th>Receipt</th>
                 </tr>
               </thead>
               <tbody>
                 {loading ? (
                   <tr>
                     <td colSpan={6}>Loading…</td>
+                  </tr>
+                ) : loadError ? (
+                  <tr>
+                    <td colSpan={6} className="form-error">
+                      {loadError}
+                    </td>
                   </tr>
                 ) : orders.length === 0 ? (
                   <tr>
@@ -47,18 +56,29 @@ export function OrdersView({ orders, loading }: OrdersViewProps) {
                   orders.map((o) => (
                     <tr key={o.orderId}>
                       <td>
-                        <code>{o.orderId.slice(0, 8)}…</code>
+                        <code title={o.orderId}>{o.orderId.slice(0, 12)}…</code>
                       </td>
                       <td>{o.flowMode}</td>
-                      <td>
-                        {o.cartSummary.slice(0, 36)}
-                        {o.cartSummary.length > 36 ? '…' : ''}
+                      <td title={o.cartSummary}>
+                        {o.cartSummary.slice(0, 64)}
+                        {o.cartSummary.length > 64 ? '…' : ''}
                       </td>
                       <td>{formatPrice(o.chargedAmountCents)}</td>
                       <td>
                         <span className={`status-${o.status}`}>{o.status}</span>
                       </td>
-                      <td></td>
+                      <td>
+                        {onDownloadReceipt ? (
+                          <button
+                            type="button"
+                            className="btn-secondary btn-sm"
+                            disabled={downloadingOrderId === o.orderId}
+                            onClick={() => onDownloadReceipt(o.orderId)}
+                          >
+                            {downloadingOrderId === o.orderId ? 'Loading…' : 'PDF ↓'}
+                          </button>
+                        ) : null}
+                      </td>
                     </tr>
                   ))
                 )}

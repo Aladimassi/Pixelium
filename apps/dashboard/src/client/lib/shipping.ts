@@ -1,3 +1,5 @@
+import { formatPrice } from './cart';
+
 export interface ShippingAddress {
   fullName: string;
   line1: string;
@@ -30,7 +32,7 @@ export function emptyShippingAddress(displayName = ''): ShippingAddress {
     line2: '',
     city: '',
     postalCode: '',
-    country: 'France',
+    country: 'United States',
   };
 }
 
@@ -75,6 +77,6 @@ export function formatDeliverySummary(
 ): string {
   const opt = DELIVERY_OPTIONS.find((o) => o.id === option);
   const shipLine =
-    shippingCents === 0 ? 'Free shipping' : `Shipping ${(shippingCents / 100).toFixed(2)} €`;
+    shippingCents === 0 ? 'Free shipping' : `Shipping ${formatPrice(shippingCents)}`;
   return `${addr.fullName} · ${addr.line1}, ${addr.postalCode} ${addr.city} · ${opt?.label ?? option} (${opt?.eta ?? ''}) · ${shipLine}`;
 }

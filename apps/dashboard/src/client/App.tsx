@@ -6,7 +6,8 @@ import {
   cartCount,
   cartSubtotal,
   clearCart,
-  discardLegacySharedCart,
+  GUEST_CART_USER_ID,
+  migrateLegacySharedCart,
   formatPrice,
   loadCart,
   handleProductImageError,
@@ -16,7 +17,7 @@ import {
   type Product,
 } from './lib/cart';
 import { cardDisplayLine, ensureDemoCard, getCardForProfile, getSavedCard, isCardComplete, isDemoUser, saveSavedCard } from './lib/payment';
-import { applyAccentTheme, getProfilePrefs, saveProfilePrefs } from './lib/profile';
+import { applyAccentTheme, applyDisplaySettings, getProfilePrefs, saveProfilePrefs } from './lib/profile';
 import { AdminModal } from './components/AdminModal';
 import { HomeView } from './components/HomeView';
 import { AssistantView } from './components/AssistantView';
@@ -31,7 +32,9 @@ import { SiteFooter } from './components/SiteFooter';
 import { Toast } from './components/Toast';
 import { VoidBackground } from './components/VoidBackground';
 import { navigateToView, viewFromPath, type AppView } from './lib/routes';
+import { downloadReceiptPdf, type ReceiptData } from './lib/receipt-pdf';
 import {
+  DELIVERY_OPTIONS,
   type DeliveryOption,
   type ShippingAddress,
   formatDeliverySummary,
@@ -139,9 +142,20 @@ function renderCartMandateReview(
   );
 }
 
+function readResetTokenFromUrl(): string {
+  if (typeof window === 'undefined') return '';
+  const path = window.location.pathname.replace(/\/+$/, '') || '/';
+  if (path === '/reset-password' || path.endsWith('/reset-password')) {
+    return new URLSearchParams(window.location.search).get('token') ?? '';
+  }
+  return '';
+}
+
 export function App() {
   const [authenticated, setAuthenticated] = useState(() => readSession().loggedIn);
   const [user, setUser] = useState<User | null>(() => readSession().user);
+  const [authResetToken, setAuthResetToken] = useState(readResetTokenFromUrl);
+  const [showAuth, setShowAuth] = useState(() => Boolean(readResetTokenFromUrl()));
   const [brokerUrl, setBrokerUrl] = useState('');
   const [view, setView] = useState<AppView>(() => viewFromPath(window.location.pathname));
   const [toast, setToast] = useState<string | null>(null);
@@ -151,6 +165,8 @@ export function App() {
   const [category, setCategory] = useState('all');
   const [searchQuery, setSearchQuery] = useState('');
   const [activeQuery, setActiveQuery] = useState('');
+  const [searchSuggestions, setSearchSuggestions] = useState<Product[]>([]);
+  const [searchSuggestionsLoading, setSearchSuggestionsLoading] = useState(false);
   const [page, setPage] = useState(1);
   const [pages, setPages] = useState(1);
   const [total, setTotal] = useState(0);
@@ -184,15 +200,21 @@ export function App() {
   const [successOrderId, setSuccessOrderId] = useState<string>();
   const [successDelivery, setSuccessDelivery] = useState<string>();
   const [successItems, setSuccessItems] = useState<PendingConsent['cart']['payload']['items']>([]);
+  const [successEmailSent, setSuccessEmailSent] = useState(false);
+  const [successEmailError, setSuccessEmailError] = useState<string>();
+  const [successDeliveryEta, setSuccessDeliveryEta] = useState<string>();
+  const [successReceipt, setSuccessReceipt] = useState<ReceiptData | null>(null);
+  const [downloadingOrderId, setDownloadingOrderId] = useState<string | null>(null);
 
   const [profileOpen, setProfileOpen] = useState(false);
-  const [profileTab, setProfileTab] = useState<'identity' | 'appearance' | 'payment' | 'delivery'>('identity');
+  const [profileTab, setProfileTab] = useState<'identity' | 'settings' | 'appearance' | 'payment' | 'delivery'>('identity');
   const [profileError, setProfileError] = useState<string>();
   const [profileSaved, setProfileSaved] = useState(false);
   const [profileKey, setProfileKey] = useState(0);
 
   const [orders, setOrders] = useState<Order[]>([]);
   const [ordersLoading, setOrdersLoading] = useState(false);
+  const [ordersError, setOrdersError] = useState<string>();
 
   const [adminOpen, setAdminOpen] = useState(false);
   const [adminOutput, setAdminOutput] = useState('');
@@ -207,6 +229,7 @@ export function App() {
   const [aiBusy, setAiBusy] = useState(false);
 
   const prefs = useMemo(() => getProfilePrefs(user?.id), [user?.id, profileKey]);
+  const cartUserId = user?.id ?? GUEST_CART_USER_ID;
   const savedCard = useMemo(
     () => (user ? getSavedCard(user.id, user.email) : null),
     [user?.id, user?.email, profileKey]
@@ -258,17 +281,41 @@ export function App() {
   }, []);
 
   const refreshCart = useCallback(() => {
-    setCart(user?.id ? loadCart(user.id) : []);
-  }, [user?.id]);
+    setCart(loadCart(cartUserId));
+  }, [cartUserId]);
 
   useEffect(() => {
-    if (!user?.id) {
-      setCart([]);
-      return;
+    setCart(loadCart(cartUserId));
+    if (user?.id) migrateLegacySharedCart(user.id);
+  }, [cartUserId, user?.id]);
+
+  useEffect(() => {
+    const syncAuthFromUrl = () => {
+      const token = readResetTokenFromUrl();
+      if (token) {
+        setAuthResetToken(token);
+        setShowAuth(true);
+      }
+    };
+    syncAuthFromUrl();
+    window.addEventListener('popstate', syncAuthFromUrl);
+    return () => window.removeEventListener('popstate', syncAuthFromUrl);
+  }, []);
+
+  useEffect(() => {
+    if (authResetToken && authenticated) {
+      clearSession();
+      setAuthenticated(false);
+      setUser(null);
+      setShowAuth(true);
     }
-    discardLegacySharedCart();
-    setCart(loadCart(user.id));
-  }, [user?.id]);
+  }, [authResetToken, authenticated]);
+
+  useEffect(() => {
+    if (authenticated) setShowAuth(false);
+  }, [authenticated]);
+
+  const showAdminConsole = Boolean(user && isDemoUser(user.email));
 
   const validCart = useMemo(() => {
     return cart.filter((item) => productsBySku[item.sku]);
@@ -279,6 +326,9 @@ export function App() {
   const cartTotal = subtotal + tax;
 
   const userGreeting = useMemo(() => {
+    if (!authenticated) {
+      return <span className="nav-name">Guest</span>;
+    }
     const name = user?.displayName ?? user?.email ?? 'Guest';
     const tagline = prefs.tagline?.trim();
     return (
@@ -292,7 +342,7 @@ export function App() {
         </span>
       </>
     );
-  }, [user, prefs]);
+  }, [authenticated, user, prefs]);
 
   const loadCategories = useCallback(async () => {
     const { ok, data } = await api<{ categories?: Category[]; total?: number }>(brokerUrl, '/api/catalog/categories');
@@ -346,18 +396,36 @@ export function App() {
 
   const loadOrders = useCallback(async () => {
     setOrdersLoading(true);
-    const { ok, data } = await api<{ orders?: Order[] }>(brokerUrl, '/api/audit/orders');
+    setOrdersError(undefined);
+    const { ok, data } = await api<{ orders?: Order[]; error?: string }>(brokerUrl, '/api/audit/orders');
     setOrdersLoading(false);
-    if (ok) setOrders(data.orders ?? []);
+    if (!ok) {
+      setOrders([]);
+      setOrdersError(data.error ?? 'Could not load your orders. Try again in a moment.');
+      return;
+    }
+    setOrders(data.orders ?? []);
   }, [brokerUrl]);
+
+  const requireSignIn = useCallback(
+    (message = 'Sign in to continue') => {
+      setShowAuth(true);
+      showToast(message);
+    },
+    [showToast],
+  );
 
   const goToView = useCallback(
     (next: AppView) => {
+      if ((next === 'assistant' || next === 'orders') && !authenticated) {
+        requireSignIn(next === 'orders' ? 'Sign in to view your orders' : 'Sign in to use the AI assistant');
+        return;
+      }
       setView(next);
       navigateToView(next);
       if (next === 'orders') loadOrders();
     },
-    [loadOrders]
+    [authenticated, loadOrders, requireSignIn]
   );
 
   const loadAiStatus = useCallback(async () => {
@@ -398,21 +466,56 @@ export function App() {
   }, [showToast]);
 
   useEffect(() => {
-    if (!authenticated) return;
+    if (!brokerUrl) return;
     loadAiStatus();
     loadCategories();
     loadFeatured();
     loadPopular();
-  }, [authenticated, brokerUrl, loadAiStatus, loadCategories, loadFeatured, loadPopular]);
+  }, [brokerUrl, loadAiStatus, loadCategories, loadFeatured, loadPopular]);
 
   useEffect(() => {
-    if (!authenticated) return;
+    if (!brokerUrl) return;
     loadProducts();
-  }, [authenticated, loadProducts]);
+  }, [brokerUrl, loadProducts]);
 
   useEffect(() => {
-    if (user?.id) applyAccentTheme(prefs.accent);
-  }, [user?.id, prefs.accent]);
+    const q = searchQuery.trim();
+    if (!brokerUrl) {
+      setSearchSuggestions([]);
+      return;
+    }
+    if (!q || q.length < 2) {
+      setSearchSuggestions([]);
+      setSearchSuggestionsLoading(false);
+      if (!q) setActiveQuery('');
+      return;
+    }
+
+    const timer = window.setTimeout(async () => {
+      setSearchSuggestionsLoading(true);
+      const params = new URLSearchParams({ q, limit: '8', sort: 'popular' });
+      if (inStockOnly) params.set('inStock', '1');
+      const { ok, data } = await api<{ products?: Product[] }>(brokerUrl, `/api/catalog?${params}`);
+      setSearchSuggestionsLoading(false);
+      if (ok) {
+        const list = data.products ?? [];
+        setSearchSuggestions(list);
+        setProductsBySku((prev) => ({ ...prev, ...Object.fromEntries(list.map((p) => [p.sku, p])) }));
+      }
+    }, 280);
+
+    return () => window.clearTimeout(timer);
+  }, [searchQuery, brokerUrl, inStockOnly]);
+
+  useEffect(() => {
+    if (user?.id) {
+      applyAccentTheme(prefs.accent);
+      applyDisplaySettings(prefs);
+      setSort(prefs.defaultSort);
+      setInStockOnly(prefs.inStockOnlyDefault);
+      setDeliveryOption(prefs.defaultDelivery);
+    }
+  }, [user?.id, prefs]);
 
   useEffect(() => {
     async function init() {
@@ -450,6 +553,14 @@ export function App() {
     if (!ok || !data.token || !data.user) return data.error ?? 'Login failed';
     saveSession(data.token, data.user);
     if (isDemoUser(data.user.email)) ensureDemoCard(data.user.id);
+    migrateLegacySharedCart(data.user.id);
+    const guestItems = loadCart(GUEST_CART_USER_ID);
+    if (guestItems.length) {
+      for (const item of guestItems) {
+        addToCart(data.user.id, item.sku, item.quantity);
+      }
+      clearCart(GUEST_CART_USER_ID);
+    }
     resetSessionUi();
     setUser(data.user);
     setAuthenticated(true);
@@ -475,16 +586,45 @@ export function App() {
     return null;
   };
 
+  const handleForgotPassword = async (email: string) => {
+    if (!brokerUrl) return { error: 'Store is still loading — try again in a moment' };
+    const { ok, data } = await api<{ message?: string; error?: string; emailError?: string; emailSent?: boolean }>(
+      brokerUrl,
+      '/api/auth/forgot-password',
+      {
+        method: 'POST',
+        body: JSON.stringify({ email }),
+      },
+    );
+    if (!ok) return { error: data.error ?? 'Could not send reset email' };
+    if (data.emailError) return { emailError: data.emailError };
+    return { emailSent: Boolean(data.emailSent) };
+  };
+
+  const handleResetPassword = async (token: string, password: string) => {
+    if (!brokerUrl) return 'Store is still loading — try again in a moment';
+    const { ok, data } = await api<{ message?: string; error?: string }>(
+      brokerUrl,
+      '/api/auth/reset-password',
+      {
+        method: 'POST',
+        body: JSON.stringify({ token, password }),
+      },
+    );
+    if (!ok) return data.error ?? 'Could not reset password';
+    window.history.replaceState({}, '', '/');
+    return null;
+  };
+
   const handleAddToCart = (sku: string) => {
-    if (!user?.id) return;
-    addToCart(user.id, sku);
+    addToCart(cartUserId, sku);
     refreshCart();
     showToast('Added to cart');
   };
 
   const enrichCartProducts = useCallback(async () => {
-    if (!user?.id) return;
-    const current = loadCart(user.id);
+    const current = loadCart(cartUserId);
+    if (current.length === 0) return;
     const missing = current.filter((i) => !productsBySku[i.sku]).map((i) => i.sku);
     if (missing.length === 0) return;
     const updates: Record<string, Product> = {};
@@ -493,7 +633,7 @@ export function App() {
       if (ok && data.product) updates[sku] = data.product;
     }
     if (Object.keys(updates).length) setProductsBySku((prev) => ({ ...prev, ...updates }));
-  }, [brokerUrl, productsBySku, user?.id]);
+  }, [brokerUrl, productsBySku, cartUserId]);
 
   useEffect(() => {
     if (cartOpen) enrichCartProducts();
@@ -512,8 +652,11 @@ export function App() {
   };
 
   const openCheckout = async () => {
-    if (!user?.id) return;
-    const current = loadCart(user.id);
+    if (!user?.id) {
+      requireSignIn('Sign in to checkout');
+      return;
+    }
+    const current = loadCart(cartUserId);
     if (current.length === 0) {
       showToast('Cart is empty');
       return;
@@ -538,8 +681,9 @@ export function App() {
   const prepareCheckoutReview = async (addr?: ShippingAddress) => {
     const shipAddr = addr ?? shippingAddress;
     if (!user?.id) return;
-    const current = loadCart(user.id);
+    const current = loadCart(cartUserId);
     const items = current.map((i) => ({ sku: i.sku, quantity: i.quantity }));
+    const shipCents = shippingCostCents(subtotal, deliveryOption);
     setCheckoutReview(<p className="loading">Preparing your order…</p>);
 
     const { ok, data } = await api<{
@@ -550,7 +694,7 @@ export function App() {
       error?: string;
     }>(brokerUrl, '/api/checkout/prepare', {
       method: 'POST',
-      body: JSON.stringify({ items }),
+      body: JSON.stringify({ items, shippingCents: shipCents }),
     });
 
     if (!ok || !data.cartMandate || !data.intentMandate) {
@@ -558,7 +702,6 @@ export function App() {
       return;
     }
 
-    const shipCents = shippingCostCents(data.cartMandate.payload.subtotalCents, deliveryOption);
     const shipSummary = formatDeliverySummary(shipAddr, deliveryOption, shipCents);
     setPendingConsent({
       intent: data.intentMandate,
@@ -584,7 +727,10 @@ export function App() {
   };
 
   const handleContinueToReview = async () => {
-    if (!user?.id) return;
+    if (!user?.id) {
+      requireSignIn('Sign in to checkout');
+      return;
+    }
     saveShippingAddress(user.id, shippingAddress);
     if (pendingConsent) {
       const shipCents = shippingCostCents(pendingConsent.cart.payload.subtotalCents, deliveryOption);
@@ -620,6 +766,47 @@ export function App() {
     setSuccessItems([]);
     setSuccessOrderId(undefined);
     setSuccessDelivery(undefined);
+    setSuccessEmailSent(false);
+    setSuccessEmailError(undefined);
+    setSuccessDeliveryEta(undefined);
+    setSuccessReceipt(null);
+  };
+
+  const handleDownloadOrderReceipt = async (orderId: string) => {
+    if (!brokerUrl) return;
+    setDownloadingOrderId(orderId);
+    const { ok, data } = await api<{
+      order?: Order & { createdAt?: string };
+      mandateChain?: {
+        cart: {
+          payload: {
+            items: Array<{ name: string; quantity: number; unitPriceCents: number }>;
+            subtotalCents: number;
+            taxCents: number;
+            totalCents: number;
+          };
+        };
+        payment: { payload: { paymentId: string; amountCents: number } };
+      };
+    }>(brokerUrl, `/api/audit/orders/${encodeURIComponent(orderId)}`);
+    setDownloadingOrderId(null);
+    if (!ok || !data.mandateChain) {
+      showToast('Could not load receipt');
+      return;
+    }
+    const chain = data.mandateChain;
+    await downloadReceiptPdf({
+      orderId: `PX-${orderId.slice(-8).toUpperCase()}`,
+      date: data.order?.createdAt,
+      items: chain.cart.payload.items,
+      subtotalCents: chain.cart.payload.subtotalCents,
+      taxCents: chain.cart.payload.taxCents,
+      totalCents: chain.payment.payload.amountCents,
+      paymentRef: orderId,
+      customerName: user?.displayName,
+      customerEmail: user?.email,
+    });
+    showToast('Receipt downloaded');
   };
 
   const handleConfirmPay = async () => {
@@ -642,25 +829,41 @@ export function App() {
     const { intent, cart } = pendingConsent;
     const last4 = saved.brand === 'paypal' ? 'PPAL' : saved.last4;
 
-    const { ok: pmOk, data: pmData } = await api<{ paymentMandate?: Mandate; error?: string }>(
+    const { ok: pmOk, data: pmData } = await api<{
+      paymentMandate?: Mandate;
+      cartMandate?: PendingConsent['cart'];
+      intentMandate?: Mandate;
+      error?: string;
+    }>(
       brokerUrl,
       '/api/payment-mandate',
       {
         method: 'POST',
-        body: JSON.stringify({ intentMandate: intent, cartMandate: cart, last4 }),
+        body: JSON.stringify({
+          intentMandate: intent,
+          cartMandate: cart,
+          last4,
+          shippingCents: checkoutShippingCents,
+        }),
       }
     );
-    if (!pmOk) {
+    if (!pmOk || !pmData.paymentMandate) {
       setCheckoutStep('review');
       setCheckoutStatus(pmData.error ?? 'Payment mandate failed');
       return;
     }
+
+    const chainIntent = pmData.intentMandate ?? intent;
+    const chainCart = pmData.cartMandate ?? cart;
+    const paymentMandate = pmData.paymentMandate;
 
     await new Promise((r) => setTimeout(r, 500));
     setProcessingMessage('Processing charge…');
 
     const { ok, data } = await api<{
       success?: boolean;
+      emailSent?: boolean;
+      emailError?: string;
       payment?: { transactionId?: string; amountCents?: number; message?: string };
       errors?: string[];
       error?: string;
@@ -669,21 +872,51 @@ export function App() {
     }>(brokerUrl, '/api/submit', {
       method: 'POST',
       body: JSON.stringify({
-        mandateChain: { intent, cart, payment: pmData.paymentMandate },
+        mandateChain: { intent: chainIntent, cart: chainCart, payment: paymentMandate },
+        receipt: {
+          shippingSummary: formatDeliverySummary(shippingAddress, deliveryOption, checkoutShippingCents),
+          shippingCents: checkoutShippingCents,
+          deliveryLabel:
+            deliveryOption === 'express' ? 'Express delivery (1–2 days)' : 'Standard delivery (3–5 days)',
+          sendEmail: prefs.emailReceipts,
+        },
       }),
     });
 
     await new Promise((r) => setTimeout(r, 400));
 
+    const chargedCents = data.payment?.amountCents ?? chainCart.payload.totalCents + checkoutShippingCents;
+    const deliveryEta =
+      DELIVERY_OPTIONS.find((o) => o.id === deliveryOption)?.eta ?? '3–5 business days';
+
     if (ok && data.success) {
       const orderId = `PX-${String(data.payment?.transactionId ?? Date.now()).slice(-8).toUpperCase()}`;
-      setSuccessAmount(formatPrice(cart.payload.totalCents + checkoutShippingCents));
+      setSuccessAmount(formatPrice(chargedCents));
       setSuccessTxn(`Payment ref ${data.payment?.transactionId ?? '—'}`);
       setSuccessOrderId(orderId);
       setSuccessDelivery(formatDeliverySummary(shippingAddress, deliveryOption, checkoutShippingCents));
-      setSuccessItems(cart.payload.items);
+      setSuccessDeliveryEta(`Estimated delivery in ${deliveryEta}.`);
+      setSuccessItems(chainCart.payload.items);
+      setSuccessEmailSent(Boolean(data.emailSent));
+      setSuccessEmailError(data.emailError);
+      setSuccessReceipt({
+        orderId,
+        items: chainCart.payload.items.map((item) => ({
+          name: item.name,
+          quantity: item.quantity,
+          unitPriceCents: item.unitPriceCents,
+        })),
+        subtotalCents: chainCart.payload.subtotalCents,
+        taxCents: chainCart.payload.taxCents,
+        totalCents: chargedCents,
+        shippingCents: checkoutShippingCents,
+        deliverySummary: formatDeliverySummary(shippingAddress, deliveryOption, checkoutShippingCents),
+        paymentRef: data.payment?.transactionId,
+        customerName: user?.displayName,
+        customerEmail: user?.email,
+      });
       if (pendingConsent.source === 'cart') {
-        clearCart(user?.id);
+        clearCart(cartUserId);
         refreshCart();
       }
       if (pendingConsent.source === 'ai' && pendingConsent.parsed) {
@@ -698,7 +931,13 @@ export function App() {
       }
       loadOrders();
       setCheckoutStep('success');
-      showToast('Payment complete');
+      showToast(
+        data.emailSent
+          ? 'Receipt emailed with what you bought'
+          : data.emailError
+            ? 'Payment complete — receipt email failed'
+            : 'Payment complete',
+      );
     } else {
       setCheckoutStep('review');
       setCheckoutStatus(
@@ -754,6 +993,10 @@ export function App() {
   const handleAiChatSend = async (overrideText?: string) => {
     const text = (typeof overrideText === 'string' ? overrideText : aiMessage).trim();
     if (!text || aiBusy) return;
+    if (!authenticated) {
+      requireSignIn('Sign in to use the AI assistant');
+      return;
+    }
 
     const historyForApi = aiChatHistory.map((t) => ({ role: t.role, content: t.content }));
     if (!overrideText) setAiMessage('');
@@ -827,23 +1070,24 @@ export function App() {
     if (ok) setAdminEvents(data.events ?? []);
   };
 
-  if (!authenticated) {
-    return (
-      <>
-        <VoidBackground />
-        <AuthScreen onLogin={handleLogin} onRegister={handleRegister} />
-        <Toast message={toast} />
-      </>
-    );
-  }
-
   return (
     <>
       <VoidBackground />
+      {showAuth && !authenticated ? (
+        <div className="auth-overlay">
+          <AuthScreen
+            onLogin={handleLogin}
+            onRegister={handleRegister}
+            onForgotPassword={handleForgotPassword}
+            onResetPassword={handleResetPassword}
+            initialResetToken={authResetToken}
+          />
+        </div>
+      ) : null}
       <div id="app-shell">
         <div className="promo-bar">
           <div className="container promo-bar__inner">
-            <span>Free standard shipping on orders over €50</span>
+            <span>Free standard shipping on orders over $50</span>
             <span className="promo-bar__sep">·</span>
             <span>30-day returns on eligible items</span>
             <span className="promo-bar__sep">·</span>
@@ -860,15 +1104,29 @@ export function App() {
             const q = searchQuery.trim();
             goToShop({ query: q });
           }}
+          searchResults={searchSuggestions}
+          searchLoading={searchSuggestionsLoading}
+          appliedSearchQuery={activeQuery}
+          onSearchPick={(sku) => {
+            void openProduct(sku);
+          }}
+          onSearchViewAll={() => goToShop({ query: searchQuery.trim() })}
           onNavHome={() => goToView('home')}
           onNavShop={() => goToShop()}
           onNavAssistant={() => goToView('assistant')}
           onNavOrders={() => goToView('orders')}
+          isGuest={!authenticated}
+          onSignIn={() => setShowAuth(true)}
+          onSearchDismiss={() => setSearchQuery(activeQuery)}
           onCart={() => {
             setCartOpen(true);
             refreshCart();
           }}
           onProfile={() => {
+            if (!authenticated) {
+              requireSignIn('Sign in to open your profile');
+              return;
+            }
             setProfileTab('identity');
             setProfileError(undefined);
             setProfileSaved(false);
@@ -880,6 +1138,8 @@ export function App() {
             resetSessionUi();
             setAuthenticated(false);
             setUser(null);
+            setView('home');
+            navigateToView('home');
           }}
           onLogoHome={() => {
             setSearchQuery('');
@@ -962,11 +1222,17 @@ export function App() {
               onClearAiChat={handleClearAiChat}
             />
           ) : (
-            <OrdersView orders={orders} loading={ordersLoading} />
+            <OrdersView
+              orders={orders}
+              loading={ordersLoading}
+              loadError={ordersError}
+              onDownloadReceipt={handleDownloadOrderReceipt}
+              downloadingOrderId={downloadingOrderId}
+            />
           )}
         </main>
 
-        <SiteFooter onAdmin={openAdmin} />
+        <SiteFooter onAdmin={showAdminConsole ? openAdmin : undefined} />
       </div>
 
       <CartDrawer
@@ -978,8 +1244,7 @@ export function App() {
         total={cartTotal}
         onClose={() => setCartOpen(false)}
         onUpdateQty={(sku, qty) => {
-          if (!user?.id) return;
-          updateQty(user.id, sku, qty);
+          updateQty(cartUserId, sku, qty);
           refreshCart();
         }}
         onCheckout={openCheckout}
@@ -1008,7 +1273,11 @@ export function App() {
         successTxn={successTxn}
         successOrderId={successOrderId}
         successDelivery={successDelivery}
+        successDeliveryEta={successDeliveryEta}
         successItems={successItems}
+        successEmailSent={successEmailSent}
+        successEmailError={successEmailError}
+        userEmail={user?.email}
         productsBySku={productsBySku}
         processingMessage={processingMessage}
         canPay={Boolean(pendingConsent && savedCard && isCardComplete(savedCard))}
@@ -1023,10 +1292,10 @@ export function App() {
           setProfileTab('payment');
           setProfileOpen(true);
         }}
-        onEditDelivery={() => {
-          closeCheckout();
-          setProfileTab('delivery');
-          setProfileOpen(true);
+        onEditDelivery={undefined}
+        onBackToDelivery={() => {
+          setCheckoutStep('shipping');
+          setCheckoutStatus(undefined);
         }}
         onShippingChange={setShippingAddress}
         onDeliveryChange={(opt) => {
@@ -1034,6 +1303,13 @@ export function App() {
           setCheckoutShippingCents(shippingCostCents(subtotal, opt));
         }}
         onContinueToReview={handleContinueToReview}
+        onDownloadReceipt={
+          successReceipt
+            ? () => {
+                void downloadReceiptPdf(successReceipt).then(() => showToast('Receipt downloaded'));
+              }
+            : undefined
+        }
       />
 
       {user ? (
@@ -1042,18 +1318,29 @@ export function App() {
           open={profileOpen}
           email={user.email}
           displayName={user.displayName ?? ''}
-          tagline={prefs.tagline}
-          avatar={prefs.avatar}
-          accent={prefs.accent}
+          prefs={prefs}
           card={getCardForProfile(user.id, user.email, user.displayName ?? '')}
           error={profileError}
           saved={profileSaved}
           initialTab={profileTab}
           shippingAddress={getShippingAddress(user.id, user.displayName ?? '')}
           onClose={() => setProfileOpen(false)}
-          onSave={async ({ displayName, prefs: p, card, shippingAddress: addr }) => {
+          onChangePassword={async (currentPassword, newPassword) => {
+            const { ok, data } = await api<{ message?: string; error?: string }>(
+              brokerUrl,
+              '/api/auth/change-password',
+              {
+                method: 'POST',
+                body: JSON.stringify({ currentPassword, newPassword }),
+              },
+            );
+            if (!ok) return data.error ?? 'Could not update password';
+            return null;
+          }}
+          onSave={async ({ displayName, prefs: p, card, shippingAddress: addr, activeTab }) => {
             if (!displayName) {
               setProfileError('Display name is required');
+              setProfileSaved(false);
               return;
             }
             const hasPartialShipping =
@@ -1062,16 +1349,24 @@ export function App() {
             if (hasPartialShipping) {
               setProfileError('Please complete your delivery address or clear the fields');
               setProfileTab('delivery');
+              setProfileSaved(false);
               return;
             }
-            if (card.last4.length !== 4) {
+            if (activeTab === 'payment' && card.last4.length !== 4) {
               setProfileError('Last 4 digits must be exactly 4 numbers');
+              setProfileSaved(false);
               return;
             }
-            saveSavedCard(user.id, card);
+            if (activeTab === 'payment') {
+              saveSavedCard(user.id, card);
+            }
             saveProfilePrefs(user.id, p);
             saveShippingAddress(user.id, addr);
             setShippingAddress(addr);
+            setSort(p.defaultSort);
+            setInStockOnly(p.inStockOnlyDefault);
+            setDeliveryOption(p.defaultDelivery);
+            applyDisplaySettings(p);
             const { ok, data } = await api<{ user?: User; token?: string; error?: string }>(
               brokerUrl,
               '/api/auth/profile',
@@ -1080,17 +1375,20 @@ export function App() {
                 body: JSON.stringify({ displayName }),
               }
             );
-            if (ok && data.user) {
+            if (!ok) {
+              setProfileError(data.error ?? 'Could not save profile to the server');
+              setProfileSaved(false);
+              return;
+            }
+            if (data.user) {
               saveSession(data.token ?? getToken()!, data.user);
               setUser(data.user);
-            } else if (!ok) {
-              setUser({ ...user, displayName });
             }
             setProfileSaved(true);
             setProfileError(undefined);
             setProfileKey((k) => k + 1);
             applyAccentTheme(p.accent);
-            showToast('Profile saved');
+            showToast('Settings saved');
             setTimeout(() => setProfileOpen(false), 600);
           }}
         />

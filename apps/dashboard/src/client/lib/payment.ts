@@ -17,7 +17,7 @@ export const DEMO_CARD: SavedCard = {
   brand: 'mastercard',
   icon: '◆',
   label: 'Mastercard',
-  nameOnCard: 'Pixulium Member',
+  nameOnCard: 'Pixelium Member',
   last4: '4242',
   exp: '12/28',
   nickname: 'Primary card',
