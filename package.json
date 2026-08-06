@@ -25,6 +25,7 @@
     "demo:ai": "npm run demo:ai -w @pixelium/consent-broker",
     "test:adversarial": "npm run test:adversarial -w @pixelium/consent-broker",
     "test:guardrails": "npm run test:guardrails -w @pixelium/consent-broker",
+    "test:ci": "npm run build && npm run test:guardrails -w @pixelium/consent-broker && npm run test:agents",
     "verify": "powershell -ExecutionPolicy Bypass -File scripts/verify.ps1",
     "complete": "powershell -ExecutionPolicy Bypass -File scripts/complete.ps1",
     "deploy": "powershell -ExecutionPolicy Bypass -File scripts/deploy.ps1",

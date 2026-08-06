@@ -8,3 +8,4 @@ data/
 __pycache__/
 *.pyc
 *.tsbuildinfo
+pixelium-deploy.tar.gz

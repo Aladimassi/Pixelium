@@ -1,0 +1,86 @@
+name: Deploy
+
+on:
+  workflow_run:
+    workflows: [CI]
+    types: [completed]
+    branches: [main]
+  workflow_dispatch:
+    inputs:
+      skip_tests:
+        description: Skip waiting for CI (emergency deploy only)
+        required: false
+        default: false
+        type: boolean
+
+concurrency:
+  group: deploy-production
+  cancel-in-progress: false
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    if: |
+      github.event_name == 'workflow_dispatch' ||
+      (github.event.workflow_run.conclusion == 'success')
+    environment: production
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event_name == 'workflow_run' && github.event.workflow_run.head_sha || github.sha }}
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: npm
+
+      - name: Install and build
+        run: |
+          npm ci
+          npm run build
+
+      - name: Create deploy archive
+        run: bash scripts/create-deploy-archive.sh
+
+      - name: Configure SSH
+        uses: webfactory/ssh-agent@v0.9.0
+        with:
+          ssh-private-key: ${{ secrets.AZURE_SSH_PRIVATE_KEY }}
+
+      - name: Add host key
+        run: |
+          mkdir -p ~/.ssh
+          ssh-keyscan -H "${{ secrets.AZURE_HOST }}" >> ~/.ssh/known_hosts
+
+      - name: Upload bundle and deploy script
+        env:
+          DEPLOY_HOST: ${{ secrets.AZURE_HOST }}
+          DEPLOY_USER: ${{ secrets.AZURE_USER }}
+        run: |
+          scp pixelium-deploy.tar.gz "scripts/remote-deploy.sh" "${DEPLOY_USER}@${DEPLOY_HOST}:/home/${DEPLOY_USER}/"
+
+      - name: Run remote deploy
+        env:
+          DEPLOY_HOST: ${{ secrets.AZURE_HOST }}
+          DEPLOY_USER: ${{ secrets.AZURE_USER }}
+        run: |
+          ssh "${DEPLOY_USER}@${DEPLOY_HOST}" "chmod +x ~/remote-deploy.sh && bash ~/remote-deploy.sh"
+
+      - name: Verify production health
+        env:
+          HEALTH_URL: ${{ secrets.PRODUCTION_HEALTH_URL }}
+        run: |
+          URL="${HEALTH_URL:-https://pixelium.duckdns.org/broker/health}"
+          for i in $(seq 1 12); do
+            if curl -fsS "$URL" | grep -q '"status"'; then
+              echo "Production health OK: $URL"
+              curl -fsS "$URL"
+              exit 0
+            fi
+            echo "Waiting for production health ($i/12)..."
+            sleep 10
+          done
+          echo "Production health check failed: $URL"
+          exit 1
